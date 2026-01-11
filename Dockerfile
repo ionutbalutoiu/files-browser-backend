@@ -16,8 +16,11 @@ COPY --from=builder /build/upload-server .
 # Create data directory
 RUN mkdir -p /data && chown uploader:uploader /data
 
+# Environment variable for base directory
+ENV UPLOAD_BASE_DIR=/data
+
 USER uploader
 EXPOSE 8080
 
 ENTRYPOINT ["/app/upload-server"]
-CMD ["-listen", ":8080", "-base-dir", "/data", "-max-size", "2147483648"]
+CMD ["-listen", ":8080", "-base-dir", "${UPLOAD_BASE_DIR}", "-max-size", "2147483648"]
