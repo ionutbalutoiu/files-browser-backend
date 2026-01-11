@@ -23,4 +23,4 @@ USER uploader
 EXPOSE 8080
 
 ENTRYPOINT ["/app/upload-server"]
-CMD ["-listen", ":8080", "-base-dir", "${UPLOAD_BASE_DIR}", "-max-size", "2147483648"]
+CMD ["-listen", ":8080", "-max-size", "2147483648"]

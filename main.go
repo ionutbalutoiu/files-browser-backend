@@ -347,9 +347,15 @@ func (s *Server) jsonResponse(w http.ResponseWriter, status int, data interface{
 }
 
 func main() {
-	// Parse command-line flags
+	// Determine default base directory from environment or fallback
+	defaultBaseDir := os.Getenv("UPLOAD_BASE_DIR")
+	if defaultBaseDir == "" {
+		defaultBaseDir = "/srv/files"
+	}
+
+	// Parse command-line flags (flags take priority over env vars)
 	listenAddr := flag.String("listen", ":8080", "Address to listen on")
-	baseDir := flag.String("base-dir", "/srv/files", "Base directory for file storage")
+	baseDir := flag.String("base-dir", defaultBaseDir, "Base directory for file storage (env: UPLOAD_BASE_DIR)")
 	maxSize := flag.Int64("max-size", 2*1024*1024*1024, "Maximum upload size in bytes (default: 2GB)")
 	uploadPrefix := flag.String("prefix", "/upload", "URL prefix for upload endpoint")
 	flag.Parse()
