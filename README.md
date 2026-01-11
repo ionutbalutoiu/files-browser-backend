@@ -1,16 +1,17 @@
-# File Upload Service
+# File Service
 
-A secure, minimal Go service for handling file uploads via HTTP POST (`multipart/form-data`), designed to run behind Nginx.
+A secure, minimal Go service for handling file uploads and deletions via HTTP, designed to run behind Nginx.
 
 ## Features
 
 - **Streaming uploads** - files are streamed to disk, not buffered in memory
 - **Multiple file support** - upload several files in a single request
+- **File deletion** - delete files or empty directories
 - **Path safety** - prevents path traversal attacks (`../`, symlinks, absolute paths)
 - **No overwrites** - rejects uploads that would overwrite existing files (HTTP 409)
 - **Auto-create directories** - target directories are created automatically
 - **Safe writes** - files are synced to disk before success response
-- **Graceful shutdown** - in-progress uploads complete before shutdown
+- **Graceful shutdown** - in-progress operations complete before shutdown
 
 ## Build
 
@@ -33,7 +34,11 @@ go build -ldflags="-s -w" -o upload-server .
   -listen :9000 \
   -base-dir /var/www/files \
   -max-size 104857600 \
-  -prefix /upload
+  -upload-prefix /upload \
+  -delete-prefix /delete
+
+# Using environment variable for base dir
+UPLOAD_BASE_DIR=/var/www/files ./upload-server
 
 # Show help
 ./upload-server -help
@@ -44,15 +49,16 @@ go build -ldflags="-s -w" -o upload-server .
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-listen` | `:8080` | Address and port to listen on |
-| `-base-dir` | `/srv/files` | Base directory for file storage |
+| `-base-dir` | `/srv/files` | Base directory for file storage (env: `UPLOAD_BASE_DIR`) |
 | `-max-size` | `2147483648` (2GB) | Maximum upload size in bytes |
-| `-prefix` | `/upload` | URL prefix for upload endpoint |
+| `-upload-prefix` | `/upload` | URL prefix for upload endpoint |
+| `-delete-prefix` | `/delete` | URL prefix for delete endpoint |
 
 ## API
 
 ### Upload Files
 
-```
+```http
 POST /upload/<path>/
 Content-Type: multipart/form-data
 ```
@@ -123,9 +129,44 @@ curl -X POST -F "file=@readme.txt" http://localhost:8080/upload/
 | 413 | Upload size exceeds limit |
 | 500 | Internal server error |
 
+### Delete File or Directory
+
+```http
+DELETE /delete/<path>
+```
+
+- `<path>` maps to a file or directory under the base files root
+- Directories can only be deleted if empty
+- Symlinks are rejected (cannot be deleted)
+
+#### Example Requests
+
+```bash
+# Delete a file
+curl -X DELETE http://localhost:8080/delete/photos/2026/image.jpg
+
+# Delete an empty directory
+curl -X DELETE http://localhost:8080/delete/photos/2026/
+
+# Verbose output to see status
+curl -v -X DELETE http://localhost:8080/delete/docs/old-file.pdf
+```
+
+#### HTTP Status Codes
+
+| Code | Meaning |
+|------|---------|
+| 204 | Successfully deleted |
+| 400 | Invalid path (traversal attempt, symlink, etc.) |
+| 403 | Forbidden (e.g., trying to delete base directory) |
+| 404 | Path does not exist |
+| 405 | Method not allowed (only DELETE is accepted) |
+| 409 | Directory is not empty |
+| 500 | Internal server error |
+
 ### Health Check
 
-```
+```http
 GET /health
 ```
 

@@ -1,12 +1,12 @@
 # Nginx Integration
 
-This document explains how to integrate the upload service with Nginx.
+This document explains how to integrate the file service (upload & delete) with Nginx.
 
 ## Prerequisites
 
 - Nginx installed and configured
-- Upload service running (default: `localhost:8080`)
-- Files directory accessible by both Nginx and the upload service
+- File service running (default: `localhost:8080`)
+- Files directory accessible by both Nginx and the file service
 
 ## Configuration
 
@@ -14,7 +14,7 @@ Add this to your Nginx server block:
 
 ```nginx
 # =============================================================================
-# FILE UPLOAD SERVICE - Nginx Configuration
+# FILE SERVICE - Nginx Configuration (Upload & Delete)
 # =============================================================================
 
 # Maximum upload size (must match or exceed Go service's -max-size)
@@ -46,7 +46,7 @@ location /ui/ {
 
 # Upload endpoint - proxy to Go service
 location /upload/ {
-    # Proxy to upload service
+    # Proxy to file service
     proxy_pass http://127.0.0.1:8080;
     
     # Required headers
@@ -67,8 +67,20 @@ location /upload/ {
     # The Go service enforces its own limit
 }
 
+# Delete endpoint - proxy to Go service
+location /delete/ {
+    # Proxy to file service
+    proxy_pass http://127.0.0.1:8080;
+    
+    # Required headers
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
 # Health check endpoint (optional, useful for load balancers)
-location = /upload/health {
+location = /health {
     proxy_pass http://127.0.0.1:8080/health;
     proxy_set_header Host $host;
 }
@@ -107,6 +119,14 @@ server {
         proxy_connect_timeout 300;
         proxy_send_timeout 600;
         proxy_read_timeout 600;
+    }
+    
+    # Delete API
+    location /delete/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     }
     
     # Root redirect

@@ -27,6 +27,7 @@ func setupTestServer(t *testing.T) (*Server, string) {
 		BaseDir:       tmpDir,
 		MaxUploadSize: 10 * 1024 * 1024, // 10MB for tests
 		UploadPrefix:  "/upload",
+		DeletePrefix:  "/delete",
 	}
 
 	server, err := NewServer(cfg)
@@ -138,7 +139,7 @@ func TestUploadSingleFile(t *testing.T) {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
-	server.ServeHTTP(rr, req)
+	server.HandleUpload(rr, req)
 
 	if rr.Code != http.StatusCreated {
 		t.Errorf("expected status 201, got %d: %s", rr.Code, rr.Body.String())
@@ -189,7 +190,7 @@ func TestUploadMultipleFiles(t *testing.T) {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
-	server.ServeHTTP(rr, req)
+	server.HandleUpload(rr, req)
 
 	if rr.Code != http.StatusCreated {
 		t.Errorf("expected status 201, got %d: %s", rr.Code, rr.Body.String())
@@ -221,7 +222,7 @@ func TestRejectOverwrite(t *testing.T) {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
-	server.ServeHTTP(rr, req)
+	server.HandleUpload(rr, req)
 
 	if rr.Code != http.StatusConflict {
 		t.Errorf("expected status 409, got %d", rr.Code)
@@ -259,7 +260,7 @@ func TestRejectEmptyFilename(t *testing.T) {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
-	server.ServeHTTP(rr, req)
+	server.HandleUpload(rr, req)
 
 	var resp UploadResponse
 	json.NewDecoder(rr.Body).Decode(&resp)
@@ -283,7 +284,7 @@ func TestRejectHiddenFiles(t *testing.T) {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
-	server.ServeHTTP(rr, req)
+	server.HandleUpload(rr, req)
 
 	var resp UploadResponse
 	json.NewDecoder(rr.Body).Decode(&resp)
@@ -305,7 +306,7 @@ func TestMethodNotAllowed(t *testing.T) {
 	for _, method := range methods {
 		req := httptest.NewRequest(method, "/upload/test/", nil)
 		rr := httptest.NewRecorder()
-		server.ServeHTTP(rr, req)
+		server.HandleUpload(rr, req)
 
 		if rr.Code != http.StatusMethodNotAllowed {
 			t.Errorf("%s: expected 405, got %d", method, rr.Code)
@@ -321,7 +322,7 @@ func TestInvalidContentType(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
-	server.ServeHTTP(rr, req)
+	server.HandleUpload(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", rr.Code)
@@ -353,7 +354,7 @@ func TestPartialSuccess(t *testing.T) {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
-	server.ServeHTTP(rr, req)
+	server.HandleUpload(rr, req)
 
 	// Should return 201 because at least one file was uploaded
 	if rr.Code != http.StatusCreated {
@@ -368,5 +369,185 @@ func TestPartialSuccess(t *testing.T) {
 	}
 	if len(resp.Skipped) != 1 || resp.Skipped[0] != "existing.txt" {
 		t.Errorf("unexpected skipped: %v", resp.Skipped)
+	}
+}
+
+// ============================================================================
+// DELETE TESTS
+// ============================================================================
+
+func TestDeleteFile(t *testing.T) {
+	server, tmpDir := setupTestServer(t)
+	defer os.RemoveAll(tmpDir)
+
+	// Create a file to delete
+	os.MkdirAll(filepath.Join(tmpDir, "docs"), 0755)
+	os.WriteFile(filepath.Join(tmpDir, "docs", "test.txt"), []byte("content"), 0644)
+
+	req := httptest.NewRequest(http.MethodDelete, "/delete/docs/test.txt", nil)
+	rr := httptest.NewRecorder()
+	server.HandleDelete(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Verify file is gone
+	if _, err := os.Stat(filepath.Join(tmpDir, "docs", "test.txt")); !os.IsNotExist(err) {
+		t.Error("file should have been deleted")
+	}
+}
+
+func TestDeleteEmptyDirectory(t *testing.T) {
+	server, tmpDir := setupTestServer(t)
+	defer os.RemoveAll(tmpDir)
+
+	// Create an empty directory
+	os.MkdirAll(filepath.Join(tmpDir, "empty-dir"), 0755)
+
+	req := httptest.NewRequest(http.MethodDelete, "/delete/empty-dir/", nil)
+	rr := httptest.NewRecorder()
+	server.HandleDelete(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Errorf("expected 204, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Verify directory is gone
+	if _, err := os.Stat(filepath.Join(tmpDir, "empty-dir")); !os.IsNotExist(err) {
+		t.Error("directory should have been deleted")
+	}
+}
+
+func TestDeleteNonEmptyDirectory(t *testing.T) {
+	server, tmpDir := setupTestServer(t)
+	defer os.RemoveAll(tmpDir)
+
+	// Create directory with a file
+	os.MkdirAll(filepath.Join(tmpDir, "non-empty"), 0755)
+	os.WriteFile(filepath.Join(tmpDir, "non-empty", "file.txt"), []byte("content"), 0644)
+
+	req := httptest.NewRequest(http.MethodDelete, "/delete/non-empty/", nil)
+	rr := httptest.NewRecorder()
+	server.HandleDelete(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Errorf("expected 409, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Directory should still exist
+	if _, err := os.Stat(filepath.Join(tmpDir, "non-empty")); err != nil {
+		t.Error("directory should still exist")
+	}
+}
+
+func TestDeleteNonExistent(t *testing.T) {
+	server, tmpDir := setupTestServer(t)
+	defer os.RemoveAll(tmpDir)
+
+	req := httptest.NewRequest(http.MethodDelete, "/delete/does-not-exist.txt", nil)
+	rr := httptest.NewRecorder()
+	server.HandleDelete(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rr.Code)
+	}
+}
+
+func TestDeleteBaseDirectory(t *testing.T) {
+	server, tmpDir := setupTestServer(t)
+	defer os.RemoveAll(tmpDir)
+
+	// Try to delete base directory with empty path
+	req := httptest.NewRequest(http.MethodDelete, "/delete/", nil)
+	rr := httptest.NewRecorder()
+	server.HandleDelete(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestDeletePathTraversal(t *testing.T) {
+	server, tmpDir := setupTestServer(t)
+	defer os.RemoveAll(tmpDir)
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"double dot", "/delete/../etc/passwd"},
+		{"encoded double dot", "/delete/..%2F..%2Fetc%2Fpasswd"},
+		{"hidden traversal", "/delete/foo/../../etc/passwd"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodDelete, tt.path, nil)
+			rr := httptest.NewRecorder()
+			server.HandleDelete(rr, req)
+
+			if rr.Code != http.StatusBadRequest && rr.Code != http.StatusNotFound {
+				t.Errorf("expected 400 or 404, got %d", rr.Code)
+			}
+		})
+	}
+}
+
+func TestDeleteSymlink(t *testing.T) {
+	server, tmpDir := setupTestServer(t)
+	defer os.RemoveAll(tmpDir)
+
+	// Create a real file and a symlink to it
+	realFile := filepath.Join(tmpDir, "real.txt")
+	os.WriteFile(realFile, []byte("content"), 0644)
+
+	symlinkPath := filepath.Join(tmpDir, "link.txt")
+	os.Symlink(realFile, symlinkPath)
+
+	req := httptest.NewRequest(http.MethodDelete, "/delete/link.txt", nil)
+	rr := httptest.NewRecorder()
+	server.HandleDelete(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for symlink, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Both symlink and real file should still exist
+	if _, err := os.Lstat(symlinkPath); err != nil {
+		t.Error("symlink should still exist")
+	}
+	if _, err := os.Stat(realFile); err != nil {
+		t.Error("real file should still exist")
+	}
+}
+
+func TestDeleteMethodNotAllowed(t *testing.T) {
+	server, tmpDir := setupTestServer(t)
+	defer os.RemoveAll(tmpDir)
+
+	methods := []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch}
+
+	for _, method := range methods {
+		req := httptest.NewRequest(method, "/delete/test.txt", nil)
+		rr := httptest.NewRecorder()
+		server.HandleDelete(rr, req)
+
+		if rr.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s: expected 405, got %d", method, rr.Code)
+		}
+	}
+}
+
+func TestDeleteAbsolutePath(t *testing.T) {
+	server, tmpDir := setupTestServer(t)
+	defer os.RemoveAll(tmpDir)
+
+	req := httptest.NewRequest(http.MethodDelete, "/delete//etc/passwd", nil)
+	rr := httptest.NewRecorder()
+	server.HandleDelete(rr, req)
+
+	if rr.Code != http.StatusBadRequest && rr.Code != http.StatusNotFound {
+		t.Errorf("expected 400 or 404, got %d", rr.Code)
 	}
 }

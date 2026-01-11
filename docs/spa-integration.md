@@ -1,6 +1,6 @@
 # SPA Integration
 
-This document shows how to integrate file uploads into your Svelte SPA.
+This document shows how to integrate file uploads and deletions into your Svelte SPA.
 
 ## Basic Upload Function
 
@@ -35,6 +35,41 @@ async function uploadFiles(files, targetPath) {
   }
   
   return result;
+}
+```
+
+## Basic Delete Function
+
+```javascript
+/**
+ * Delete a file or empty directory
+ * @param {string} path - Path to file or directory (e.g., "photos/2026/image.jpg")
+ * @returns {Promise<void>}
+ */
+async function deleteFile(path) {
+  // Normalize path (remove leading/trailing slashes for files)
+  const normalizedPath = path.replace(/^\/+|\/+$/g, '');
+  
+  const response = await fetch(`/delete/${normalizedPath}`, {
+    method: 'DELETE',
+  });
+  
+  if (!response.ok) {
+    const result = await response.json().catch(() => ({}));
+    const message = result.error || `Delete failed: ${response.status}`;
+    
+    // Map status codes to user-friendly messages
+    switch (response.status) {
+      case 404:
+        throw new Error('File not found');
+      case 409:
+        throw new Error('Directory is not empty');
+      case 403:
+        throw new Error('Cannot delete this path');
+      default:
+        throw new Error(message);
+    }
+  }
 }
 ```
 
@@ -269,6 +304,7 @@ async function safeUpload(files, path) {
 2. **Path is from URL hash** - Ensure your routing doesn't allow `..` in paths
 3. **Size limits** - Nginx and the Go service both enforce limits; show user-friendly messages
 4. **File types** - The server accepts any file type; add client-side validation if needed
+5. **Delete confirmation** - Always prompt users before deleting; there's no undo
 
 ```javascript
 // Optional client-side validation
@@ -288,3 +324,55 @@ function validateFiles(files) {
   return errors;
 }
 ```
+
+## Delete Integration Example
+
+```svelte
+<script>
+  export let fileName;
+  export let filePath;
+  
+  let deleting = false;
+  let error = null;
+  
+  async function handleDelete() {
+    // Always confirm with user
+    if (!confirm(`Delete "${fileName}"? This cannot be undone.`)) {
+      return;
+    }
+    
+    deleting = true;
+    error = null;
+    
+    try {
+      await deleteFile(filePath);
+      // Refresh file list or remove from UI
+      dispatch('deleted', { path: filePath });
+    } catch (err) {
+      error = err.message;
+    } finally {
+      deleting = false;
+    }
+  }
+</script>
+
+<button on:click={handleDelete} disabled={deleting}>
+  {deleting ? 'Deleting...' : 'Delete'}
+</button>
+
+{#if error}
+  <span class="error">{error}</span>
+{/if}
+```
+
+## Delete HTTP Status Codes
+
+| Status | Meaning | User Message |
+| ------ | ------- | ------------ |
+| 204 | Success | (no message, refresh UI) |
+| 400 | Invalid path | "Invalid file path" |
+| 403 | Forbidden | "Cannot delete this path" |
+| 404 | Not found | "File not found" |
+| 405 | Wrong method | (shouldn't happen from SPA) |
+| 409 | Not empty | "Directory is not empty" |
+| 500 | Server error | "Server error, try again" |

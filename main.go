@@ -1,6 +1,6 @@
-// Package main implements a secure file upload service for use behind Nginx.
-// It receives multipart/form-data uploads and writes files to the configured
-// base directory, mapping URL paths to filesystem directories.
+// Package main implements a secure file upload and delete service for use behind Nginx.
+// It receives multipart/form-data uploads and DELETE requests, operating on files
+// within the configured base directory.
 package main
 
 import (
@@ -27,6 +27,7 @@ type Config struct {
 	BaseDir       string
 	MaxUploadSize int64
 	UploadPrefix  string
+	DeletePrefix  string
 }
 
 // UploadResponse is the JSON response for upload requests.
@@ -62,8 +63,8 @@ func NewServer(cfg Config) (*Server, error) {
 	return &Server{config: cfg}, nil
 }
 
-// ServeHTTP implements the http.Handler interface.
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// HandleUpload handles file upload requests (POST /upload/<path>/).
+func (s *Server) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	// Only allow POST method
 	if r.Method != http.MethodPost {
 		s.errorResponse(w, http.StatusMethodNotAllowed, "only POST method is allowed")
@@ -346,6 +347,168 @@ func (s *Server) jsonResponse(w http.ResponseWriter, status int, data interface{
 	json.NewEncoder(w).Encode(data)
 }
 
+// HandleDelete handles file/directory deletion requests (DELETE /delete/<path>).
+// Security: Uses Lstat to avoid following symlinks, validates path is strictly
+// within base directory, and refuses to delete the base directory itself.
+func (s *Server) HandleDelete(w http.ResponseWriter, r *http.Request) {
+	// Only allow DELETE method
+	if r.Method != http.MethodDelete {
+		s.errorResponse(w, http.StatusMethodNotAllowed, "only DELETE method is allowed")
+		return
+	}
+
+	// Extract target path from URL
+	targetPath := strings.TrimPrefix(r.URL.Path, s.config.DeletePrefix)
+	targetPath = strings.TrimPrefix(targetPath, "/")
+	targetPath = strings.TrimSuffix(targetPath, "/") // Normalize trailing slash
+
+	// Resolve and validate target path for deletion
+	resolvedPath, err := s.resolveDeletePath(targetPath)
+	if err != nil {
+		var pathErr *PathError
+		if errors.As(err, &pathErr) {
+			s.errorResponse(w, pathErr.StatusCode, pathErr.Message)
+			return
+		}
+		log.Printf("ERROR: delete path resolution failed: %v", err)
+		s.errorResponse(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	// Perform deletion
+	if err := s.performDelete(resolvedPath); err != nil {
+		var pathErr *PathError
+		if errors.As(err, &pathErr) {
+			s.errorResponse(w, pathErr.StatusCode, pathErr.Message)
+			return
+		}
+		log.Printf("ERROR: deletion failed for %s: %v", resolvedPath, err)
+		s.errorResponse(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	log.Printf("OK: deleted %s", resolvedPath)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// resolveDeletePath validates and resolves a path for deletion.
+// SECURITY CRITICAL: This function prevents path traversal and symlink escape.
+// It uses Lstat (not Stat) to avoid following symlinks.
+func (s *Server) resolveDeletePath(urlPath string) (string, error) {
+	// Reject empty path (would delete base directory)
+	if urlPath == "" || urlPath == "." {
+		return "", &PathError{
+			StatusCode: http.StatusForbidden,
+			Message:    "cannot delete base directory",
+		}
+	}
+
+	// Clean the path to normalize . and .. components
+	cleanPath := filepath.Clean(urlPath)
+
+	// Reject paths containing .. after cleaning
+	// filepath.Clean resolves .., so if it still contains .., something is wrong
+	if strings.Contains(cleanPath, "..") {
+		return "", &PathError{
+			StatusCode: http.StatusBadRequest,
+			Message:    "invalid path: contains parent directory reference",
+		}
+	}
+
+	// Reject absolute paths
+	if filepath.IsAbs(cleanPath) {
+		return "", &PathError{
+			StatusCode: http.StatusBadRequest,
+			Message:    "invalid path: absolute paths not allowed",
+		}
+	}
+
+	// Construct full target path
+	targetPath := filepath.Join(s.config.BaseDir, cleanPath)
+
+	// CRITICAL: Verify the target is strictly within base directory
+	// Use filepath.Rel to check containment
+	relPath, err := filepath.Rel(s.config.BaseDir, targetPath)
+	if err != nil || strings.HasPrefix(relPath, "..") || relPath == "." {
+		return "", &PathError{
+			StatusCode: http.StatusBadRequest,
+			Message:    "invalid path: escapes base directory",
+		}
+	}
+
+	// Use Lstat to check if path exists WITHOUT following symlinks
+	info, err := os.Lstat(targetPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", &PathError{
+				StatusCode: http.StatusNotFound,
+				Message:    "path does not exist",
+			}
+		}
+		return "", fmt.Errorf("failed to stat path: %w", err)
+	}
+
+	// SECURITY: Reject symlinks entirely to prevent escape attacks
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", &PathError{
+			StatusCode: http.StatusBadRequest,
+			Message:    "cannot delete symlinks",
+		}
+	}
+
+	return targetPath, nil
+}
+
+// performDelete deletes a file or empty directory.
+// For directories, it verifies they are empty before deletion.
+func (s *Server) performDelete(targetPath string) error {
+	// Get file info (already validated, but need to check type)
+	info, err := os.Lstat(targetPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &PathError{
+				StatusCode: http.StatusNotFound,
+				Message:    "path does not exist",
+			}
+		}
+		return err
+	}
+
+	if info.IsDir() {
+		// For directories, verify empty before deletion
+		entries, err := os.ReadDir(targetPath)
+		if err != nil {
+			return fmt.Errorf("failed to read directory: %w", err)
+		}
+		if len(entries) > 0 {
+			return &PathError{
+				StatusCode: http.StatusConflict,
+				Message:    "directory is not empty",
+			}
+		}
+	}
+
+	// Perform the deletion (works for both files and empty directories)
+	if err := os.Remove(targetPath); err != nil {
+		if os.IsNotExist(err) {
+			// Race condition: file was deleted between check and remove
+			return &PathError{
+				StatusCode: http.StatusNotFound,
+				Message:    "path does not exist",
+			}
+		}
+		if os.IsPermission(err) {
+			return &PathError{
+				StatusCode: http.StatusForbidden,
+				Message:    "permission denied",
+			}
+		}
+		return err
+	}
+
+	return nil
+}
+
 func main() {
 	// Determine default base directory from environment or fallback
 	defaultBaseDir := os.Getenv("UPLOAD_BASE_DIR")
@@ -357,7 +520,8 @@ func main() {
 	listenAddr := flag.String("listen", ":8080", "Address to listen on")
 	baseDir := flag.String("base-dir", defaultBaseDir, "Base directory for file storage (env: UPLOAD_BASE_DIR)")
 	maxSize := flag.Int64("max-size", 2*1024*1024*1024, "Maximum upload size in bytes (default: 2GB)")
-	uploadPrefix := flag.String("prefix", "/upload", "URL prefix for upload endpoint")
+	uploadPrefix := flag.String("upload-prefix", "/upload", "URL prefix for upload endpoint")
+	deletePrefix := flag.String("delete-prefix", "/delete", "URL prefix for delete endpoint")
 	flag.Parse()
 
 	// Create server
@@ -366,6 +530,7 @@ func main() {
 		BaseDir:       *baseDir,
 		MaxUploadSize: *maxSize,
 		UploadPrefix:  *uploadPrefix,
+		DeletePrefix:  *deletePrefix,
 	}
 
 	server, err := NewServer(cfg)
@@ -375,7 +540,8 @@ func main() {
 
 	// Create HTTP server
 	mux := http.NewServeMux()
-	mux.Handle(cfg.UploadPrefix+"/", server)
+	mux.HandleFunc(cfg.UploadPrefix+"/", server.HandleUpload)
+	mux.HandleFunc(cfg.DeletePrefix+"/", server.HandleDelete)
 
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -410,10 +576,11 @@ func main() {
 		close(done)
 	}()
 
-	log.Printf("Upload server starting on %s", cfg.ListenAddr)
+	log.Printf("File server starting on %s", cfg.ListenAddr)
 	log.Printf("Base directory: %s", cfg.BaseDir)
 	log.Printf("Max upload size: %d bytes (%.2f GB)", cfg.MaxUploadSize, float64(cfg.MaxUploadSize)/(1024*1024*1024))
 	log.Printf("Upload prefix: %s", cfg.UploadPrefix)
+	log.Printf("Delete prefix: %s", cfg.DeletePrefix)
 
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server error: %v", err)
