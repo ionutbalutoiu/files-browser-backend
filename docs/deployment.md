@@ -166,9 +166,9 @@ If you prefer environment variables over flags, wrap the binary:
 #!/bin/bash
 # /opt/files-svc/run.sh
 exec /opt/files-svc/files-svc \
-    -listen "${UPLOAD_LISTEN:-:8080}" \
-    -base-dir "${UPLOAD_BASE_DIR:-/srv/files}" \
-    -max-size "${UPLOAD_MAX_SIZE:-2147483648}"
+    -listen ":8080" \
+    -base-dir "${FILES_SVC_UPLOAD_BASE_DIR:-/srv/files}" \
+    -max-size "${FILES_SVC_UPLOAD_MAX_SIZE:-2147483648}"
 ```
 
 ## Health Checks

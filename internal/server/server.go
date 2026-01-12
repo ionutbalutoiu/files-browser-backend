@@ -28,11 +28,13 @@ func New(cfg config.Config) *Server {
 	uploadHandler := handlers.NewUploadHandler(cfg)
 	deleteHandler := handlers.NewDeleteHandler(cfg)
 	mkdirHandler := handlers.NewMkdirHandler(cfg)
+	renameHandler := handlers.NewRenameHandler(cfg)
 	healthHandler := handlers.NewHealthHandler()
 
 	mux.Handle("/upload/", uploadHandler)
 	mux.Handle("/delete/", deleteHandler)
 	mux.Handle("/mkdir/", mkdirHandler)
+	mux.Handle("/rename/", renameHandler)
 	mux.Handle("/health", healthHandler)
 
 	httpServer := &http.Server{

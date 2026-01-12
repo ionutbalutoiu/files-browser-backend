@@ -8,6 +8,7 @@ A secure, minimal Go service for handling file uploads, deletions, and directory
 - **Multiple file support** - upload several files in a single request
 - **File deletion** - delete files or empty directories
 - **Directory creation** - create new directories via HTTP
+- **Rename support** - rename files or directories within the base directory
 - **Path safety** - prevents path traversal attacks (`../`, symlinks, absolute paths)
 - **No overwrites** - rejects uploads that would overwrite existing files (HTTP 409)
 - **Auto-create directories** - target directories for uploads are created automatically
@@ -30,6 +31,7 @@ A secure, minimal Go service for handling file uploads, deletions, and directory
 │   │   ├── upload.go
 │   │   ├── delete.go
 │   │   ├── mkdir.go
+│   │   ├── rename.go
 │   │   └── health.go
 │   ├── fs/                    # Filesystem operations
 │   │   └── ops.go

@@ -8,6 +8,7 @@ The file service provides endpoints for:
 - Uploading files
 - Deleting files and directories
 - Creating directories
+- Renaming files and directories
 - Health checks
 
 All endpoints return JSON responses on errors. Content-Type is `application/json` for JSON responses.
@@ -221,6 +222,75 @@ curl -X POST http://localhost:8080/mkdir/photos/2026/vacation/
 - Parent directories must already exist (no recursive creation)
 - Directory names cannot contain path separators or null bytes
 - Symlinks in the parent path are rejected for security
+
+---
+
+### Rename File or Directory
+
+```
+POST /rename/<oldPath>?newName=<newName>
+```
+
+Rename a file or directory within the same parent directory.
+
+#### Request
+
+- **Method:** `POST` or `PATCH`
+- **URL Parameters:**
+  - `<oldPath>` - Current path to the file or directory (required)
+- **Query Parameters:**
+  - `newName` - New name for the file or directory (required, must be a simple name without path separators)
+
+#### Example Requests
+
+```bash
+# Rename a file
+curl -X POST "http://localhost:8080/rename/photos/old-name.jpg?newName=new-name.jpg"
+
+# Rename a directory
+curl -X POST "http://localhost:8080/rename/documents/old-folder?newName=new-folder"
+
+# Using PATCH method
+curl -X PATCH "http://localhost:8080/rename/file.txt?newName=renamed.txt"
+```
+
+#### Response
+
+**Success (200 OK):**
+```json
+{
+  "old": "photos/old-name.jpg",
+  "new": "photos/new-name.jpg",
+  "success": true
+}
+```
+
+**Error:**
+```json
+{
+  "error": "description of the error"
+}
+```
+
+#### HTTP Status Codes
+
+| Code | Meaning |
+|------|---------|
+| 200 | Successfully renamed |
+| 400 | Invalid path or new name (traversal attempt, path separators in name, symlink, etc.) |
+| 403 | Permission denied |
+| 404 | Source path does not exist |
+| 405 | Method not allowed (only POST and PATCH are accepted) |
+| 409 | Destination already exists |
+| 500 | Internal server error |
+
+#### Notes
+
+- Renaming only works within the same parent directory
+- The `newName` must be a simple filename without path separators
+- Existing files/directories cannot be overwritten
+- Symlinks cannot be renamed (rejected for security)
+- Directory contents are preserved when renaming directories
 
 ---
 

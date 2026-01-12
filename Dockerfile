@@ -17,9 +17,6 @@ COPY --from=builder /build/files-svc .
 # Create data directory
 RUN mkdir -p /data && chown uploader:uploader /data
 
-# Environment variable for base directory
-ENV UPLOAD_BASE_DIR=/data
-
 USER uploader
 EXPOSE 8080
 

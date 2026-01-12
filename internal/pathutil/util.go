@@ -280,6 +280,138 @@ func ResolveMkdirPath(baseDir, urlPath string) (resolvedPath, virtualPath string
 	return resolvedTarget, cleanPath, nil
 }
 
+// ResolveRenamePaths validates and resolves paths for rename operation.
+// Returns resolved filesystem paths and virtual paths (for response).
+// SECURITY CRITICAL: Prevents path traversal, symlink escape, and overwriting.
+func ResolveRenamePaths(baseDir, oldPath, newName string) (resolvedOld, resolvedNew, virtualOld, virtualNew string, err error) {
+	// Reject empty old path
+	if oldPath == "" || oldPath == "." {
+		return "", "", "", "", &PathError{
+			StatusCode: 400,
+			Message:    "source path is required",
+		}
+	}
+
+	// Reject empty new name
+	if newName == "" {
+		return "", "", "", "", &PathError{
+			StatusCode: 400,
+			Message:    "new name is required",
+		}
+	}
+
+	// Clean the old path
+	cleanOldPath := filepath.Clean(oldPath)
+
+	// Reject paths containing .. after cleaning
+	if strings.Contains(cleanOldPath, "..") {
+		return "", "", "", "", &PathError{
+			StatusCode: 400,
+			Message:    "invalid path: contains parent directory reference",
+		}
+	}
+
+	// Reject absolute paths
+	if filepath.IsAbs(cleanOldPath) {
+		return "", "", "", "", &PathError{
+			StatusCode: 400,
+			Message:    "invalid path: absolute paths not allowed",
+		}
+	}
+
+	// Validate new name - must be a simple name, not a path
+	cleanNewName := filepath.Clean(newName)
+	if strings.ContainsAny(cleanNewName, "/\\") || strings.Contains(cleanNewName, "..") {
+		return "", "", "", "", &PathError{
+			StatusCode: 400,
+			Message:    "invalid new name: must be a simple name without path separators",
+		}
+	}
+
+	// Reject special names
+	if cleanNewName == "" || cleanNewName == "." || cleanNewName == ".." {
+		return "", "", "", "", &PathError{
+			StatusCode: 400,
+			Message:    "invalid new name",
+		}
+	}
+
+	// Reject names containing null bytes
+	if strings.ContainsRune(cleanNewName, '\x00') {
+		return "", "", "", "", &PathError{
+			StatusCode: 400,
+			Message:    "invalid new name: contains null byte",
+		}
+	}
+
+	// Construct full old path
+	oldFullPath := filepath.Join(baseDir, cleanOldPath)
+
+	// CRITICAL: Verify the old path is strictly within base directory
+	relOldPath, err := filepath.Rel(baseDir, oldFullPath)
+	if err != nil || strings.HasPrefix(relOldPath, "..") || relOldPath == "." {
+		return "", "", "", "", &PathError{
+			StatusCode: 400,
+			Message:    "invalid path: escapes base directory",
+		}
+	}
+
+	// Use Lstat to check if old path exists WITHOUT following symlinks
+	oldInfo, err := os.Lstat(oldFullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", "", "", "", &PathError{
+				StatusCode: 404,
+				Message:    "source path does not exist",
+			}
+		}
+		return "", "", "", "", &PathError{
+			StatusCode: 500,
+			Message:    "failed to stat source path",
+		}
+	}
+
+	// SECURITY: Reject symlinks
+	if oldInfo.Mode()&os.ModeSymlink != 0 {
+		return "", "", "", "", &PathError{
+			StatusCode: 400,
+			Message:    "cannot rename symlinks",
+		}
+	}
+
+	// Construct new path (same parent directory, new name)
+	parentDir := filepath.Dir(oldFullPath)
+	newFullPath := filepath.Join(parentDir, cleanNewName)
+
+	// CRITICAL: Verify new path is also within base directory
+	relNewPath, err := filepath.Rel(baseDir, newFullPath)
+	if err != nil || strings.HasPrefix(relNewPath, "..") {
+		return "", "", "", "", &PathError{
+			StatusCode: 400,
+			Message:    "invalid new name: would escape base directory",
+		}
+	}
+
+	// Check if new path already exists
+	if _, err := os.Lstat(newFullPath); err == nil {
+		return "", "", "", "", &PathError{
+			StatusCode: 409,
+			Message:    "destination already exists",
+		}
+	} else if !os.IsNotExist(err) {
+		return "", "", "", "", &PathError{
+			StatusCode: 500,
+			Message:    "failed to check destination",
+		}
+	}
+
+	// Virtual paths for response (relative to base)
+	virtualOld = cleanOldPath
+	virtualNew = relNewPath
+
+	return oldFullPath, newFullPath, virtualOld, virtualNew, nil
+}
+
 // ValidateFilename validates an uploaded filename.
 // Returns the sanitized filename (base name only) or an error.
 func ValidateFilename(filename string) (string, error) {
