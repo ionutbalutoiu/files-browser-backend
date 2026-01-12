@@ -1,6 +1,6 @@
 # SPA Integration
 
-This document shows how to integrate file uploads and deletions into your Svelte SPA.
+This document shows how to integrate file uploads, deletions, and directory creation into your Svelte SPA.
 
 ## Basic Upload Function
 
@@ -70,6 +70,63 @@ async function deleteFile(path) {
         throw new Error(message);
     }
   }
+}
+```
+
+## Basic Create Directory Function
+
+```javascript
+/**
+ * Create a new directory
+ * @param {string} parentPath - Parent directory path (e.g., "photos/2026")
+ * @param {string} dirName - Name of the new directory
+ * @returns {Promise<{created: string}>}
+ */
+async function createDirectory(parentPath, dirName) {
+  // Validate directory name client-side
+  if (!dirName || dirName.trim() === '') {
+    throw new Error('Directory name cannot be empty');
+  }
+  
+  if (dirName.includes('/') || dirName.includes('\\')) {
+    throw new Error('Directory name cannot contain path separators');
+  }
+  
+  if (dirName === '.' || dirName === '..') {
+    throw new Error('Invalid directory name');
+  }
+  
+  // Build the full path
+  const normalizedParent = parentPath.replace(/^\/+|\/+$/g, '');
+  const fullPath = normalizedParent 
+    ? `${normalizedParent}/${dirName}` 
+    : dirName;
+  
+  const response = await fetch(`/mkdir/${fullPath}/`, {
+    method: 'POST',
+  });
+  
+  const result = await response.json().catch(() => ({}));
+  
+  if (!response.ok) {
+    const message = result.error || `Create directory failed: ${response.status}`;
+    
+    // Map status codes to user-friendly messages
+    switch (response.status) {
+      case 404:
+        throw new Error('Parent directory does not exist');
+      case 409:
+        throw new Error('Directory already exists');
+      case 403:
+        throw new Error('Cannot create directory here');
+      case 400:
+        throw new Error('Invalid directory name');
+      default:
+        throw new Error(message);
+    }
+  }
+  
+  return result;
 }
 ```
 
@@ -251,13 +308,23 @@ async function uploadFilesWithProgress(files, targetPath, onProgress) {
 
 ## URL Mapping
 
-The SPA uses hash routing, and the upload endpoint uses path routing. The mapping is straightforward:
+The SPA uses hash routing, and the API endpoints use path routing. The mapping is straightforward:
+
+### Upload Mapping
 
 | SPA URL | Upload Endpoint | Files Location |
 | ------- | --------------- | -------------- |
 | `/ui/#/` | `POST /upload/` | `/srv/files/` |
 | `/ui/#/photos` | `POST /upload/photos/` | `/srv/files/photos/` |
 | `/ui/#/photos/2026` | `POST /upload/photos/2026/` | `/srv/files/photos/2026/` |
+
+### Mkdir Mapping
+
+| SPA URL | Action | Mkdir Endpoint | Result |
+| ------- | ------ | -------------- | ------ |
+| `/ui/#/` | Create "photos" | `POST /mkdir/photos/` | `/srv/files/photos/` |
+| `/ui/#/photos` | Create "2026" | `POST /mkdir/photos/2026/` | `/srv/files/photos/2026/` |
+| `/ui/#/photos/2026` | Create "vacation" | `POST /mkdir/photos/2026/vacation/` | `/srv/files/photos/2026/vacation/` |
 
 ## Error Handling Best Practices
 
@@ -376,3 +443,193 @@ function validateFiles(files) {
 | 405 | Wrong method | (shouldn't happen from SPA) |
 | 409 | Not empty | "Directory is not empty" |
 | 500 | Server error | "Server error, try again" |
+
+## Create Directory Integration Example
+
+```svelte
+<script>
+  import { createEventDispatcher } from 'svelte';
+  
+  export let currentPath = '';
+  
+  const dispatch = createEventDispatcher();
+  
+  let showInput = false;
+  let dirName = '';
+  let creating = false;
+  let error = null;
+  
+  function startCreate() {
+    showInput = true;
+    dirName = '';
+    error = null;
+  }
+  
+  function cancelCreate() {
+    showInput = false;
+    dirName = '';
+    error = null;
+  }
+  
+  async function handleCreate() {
+    if (!dirName.trim()) {
+      error = 'Please enter a directory name';
+      return;
+    }
+    
+    creating = true;
+    error = null;
+    
+    try {
+      const result = await createDirectory(currentPath, dirName.trim());
+      showInput = false;
+      dirName = '';
+      // Notify parent to refresh file list
+      dispatch('created', { path: result.created });
+    } catch (err) {
+      error = err.message;
+    } finally {
+      creating = false;
+    }
+  }
+  
+  function handleKeydown(event) {
+    if (event.key === 'Enter') {
+      handleCreate();
+    } else if (event.key === 'Escape') {
+      cancelCreate();
+    }
+  }
+</script>
+
+<div class="new-folder">
+  {#if showInput}
+    <div class="input-row">
+      <input
+        type="text"
+        bind:value={dirName}
+        placeholder="New folder name"
+        disabled={creating}
+        on:keydown={handleKeydown}
+        autofocus
+      />
+      <button on:click={handleCreate} disabled={creating || !dirName.trim()}>
+        {creating ? 'Creating...' : 'Create'}
+      </button>
+      <button on:click={cancelCreate} disabled={creating}>
+        Cancel
+      </button>
+    </div>
+    {#if error}
+      <p class="error">{error}</p>
+    {/if}
+  {:else}
+    <button on:click={startCreate}>
+      📁 New Folder
+    </button>
+  {/if}
+</div>
+
+<style>
+  .new-folder {
+    margin: 10px 0;
+  }
+  .input-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .input-row input {
+    flex: 1;
+    padding: 8px;
+  }
+  .error {
+    color: red;
+    font-size: 0.9em;
+    margin-top: 4px;
+  }
+</style>
+```
+
+## Mkdir HTTP Status Codes
+
+| Status | Meaning | User Message |
+| ------ | ------- | ------------ |
+| 201 | Created | (refresh UI, optionally show success) |
+| 400 | Invalid name/path | "Invalid directory name" |
+| 403 | Forbidden | "Cannot create directory here" |
+| 404 | Parent missing | "Parent directory does not exist" |
+| 405 | Wrong method | (shouldn't happen from SPA) |
+| 409 | Already exists | "Directory already exists" |
+| 500 | Server error | "Server error, try again" |
+
+## Complete File Browser Toolbar Example
+
+```svelte
+<script>
+  import { createEventDispatcher } from 'svelte';
+  
+  export let currentPath = '';
+  
+  const dispatch = createEventDispatcher();
+  
+  let files = [];
+  let newFolderName = '';
+  let showNewFolder = false;
+  let uploading = false;
+  let creating = false;
+  
+  async function handleUpload() {
+    if (!files.length) return;
+    uploading = true;
+    try {
+      await uploadFiles(files, currentPath);
+      files = [];
+      dispatch('refresh');
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      uploading = false;
+    }
+  }
+  
+  async function handleCreateFolder() {
+    if (!newFolderName.trim()) return;
+    creating = true;
+    try {
+      await createDirectory(currentPath, newFolderName.trim());
+      newFolderName = '';
+      showNewFolder = false;
+      dispatch('refresh');
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      creating = false;
+    }
+  }
+</script>
+
+<div class="toolbar">
+  <!-- Upload -->
+  <label class="upload-btn">
+    📤 Upload
+    <input type="file" multiple bind:files on:change={handleUpload} hidden />
+  </label>
+  
+  <!-- New Folder -->
+  {#if showNewFolder}
+    <input 
+      type="text" 
+      bind:value={newFolderName}
+      placeholder="Folder name"
+      on:keydown={(e) => e.key === 'Enter' && handleCreateFolder()}
+    />
+    <button on:click={handleCreateFolder} disabled={creating}>
+      {creating ? '...' : '✓'}
+    </button>
+    <button on:click={() => showNewFolder = false}>✕</button>
+  {:else}
+    <button on:click={() => showNewFolder = true}>📁 New Folder</button>
+  {/if}
+</div>
+```

@@ -1,15 +1,16 @@
 # File Service
 
-A secure, minimal Go service for handling file uploads and deletions via HTTP, designed to run behind Nginx.
+A secure, minimal Go service for handling file uploads, deletions, and directory creation via HTTP, designed to run behind Nginx.
 
 ## Features
 
 - **Streaming uploads** - files are streamed to disk, not buffered in memory
 - **Multiple file support** - upload several files in a single request
 - **File deletion** - delete files or empty directories
+- **Directory creation** - create new directories via HTTP
 - **Path safety** - prevents path traversal attacks (`../`, symlinks, absolute paths)
 - **No overwrites** - rejects uploads that would overwrite existing files (HTTP 409)
-- **Auto-create directories** - target directories are created automatically
+- **Auto-create directories** - target directories for uploads are created automatically
 - **Safe writes** - files are synced to disk before success response
 - **Graceful shutdown** - in-progress operations complete before shutdown
 
@@ -35,7 +36,8 @@ go build -ldflags="-s -w" -o upload-server .
   -base-dir /var/www/files \
   -max-size 104857600 \
   -upload-prefix /upload \
-  -delete-prefix /delete
+  -delete-prefix /delete \
+  -mkdir-prefix /mkdir
 
 # Using environment variable for base dir
 UPLOAD_BASE_DIR=/var/www/files ./upload-server
@@ -53,6 +55,7 @@ UPLOAD_BASE_DIR=/var/www/files ./upload-server
 | `-max-size` | `2147483648` (2GB) | Maximum upload size in bytes |
 | `-upload-prefix` | `/upload` | URL prefix for upload endpoint |
 | `-delete-prefix` | `/delete` | URL prefix for delete endpoint |
+| `-mkdir-prefix` | `/mkdir` | URL prefix for mkdir endpoint |
 
 ## API
 
@@ -163,7 +166,57 @@ curl -v -X DELETE http://localhost:8080/delete/docs/old-file.pdf
 | 405 | Method not allowed (only DELETE is accepted) |
 | 409 | Directory is not empty |
 | 500 | Internal server error |
+### Create Directory
 
+```http
+POST /mkdir/<path>/
+```
+
+- `<path>` maps to the new directory path under the base files root
+- The final path component is the directory to be created
+- Parent directories must already exist (no recursive creation)
+- Symlinks in the path are rejected
+
+#### Example Requests
+
+```bash
+# Create a directory in root
+curl -X POST http://localhost:8080/mkdir/photos/
+
+# Create a nested directory (parent must exist)
+curl -X POST http://localhost:8080/mkdir/photos/2026/
+
+# Create another level
+curl -X POST http://localhost:8080/mkdir/photos/2026/vacation/
+```
+
+#### Response
+
+**Success (201 Created):**
+```json
+{
+  "created": "photos/2026/"
+}
+```
+
+**Error:**
+```json
+{
+  "error": "description of the error"
+}
+```
+
+#### HTTP Status Codes
+
+| Code | Meaning |
+|------|---------||
+| 201 | Directory created successfully |
+| 400 | Invalid path or directory name |
+| 403 | Forbidden (e.g., trying to create base directory, symlink escape) |
+| 404 | Parent directory does not exist |
+| 405 | Method not allowed (only POST is accepted) |
+| 409 | Directory or file already exists at path |
+| 500 | Internal server error |
 ### Health Check
 
 ```http

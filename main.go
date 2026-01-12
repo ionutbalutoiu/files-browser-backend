@@ -28,6 +28,7 @@ type Config struct {
 	MaxUploadSize int64
 	UploadPrefix  string
 	DeletePrefix  string
+	MkdirPrefix   string
 }
 
 // UploadResponse is the JSON response for upload requests.
@@ -35,6 +36,11 @@ type UploadResponse struct {
 	Uploaded []string `json:"uploaded"`
 	Skipped  []string `json:"skipped"`
 	Errors   []string `json:"errors,omitempty"`
+}
+
+// MkdirResponse is the JSON response for mkdir requests.
+type MkdirResponse struct {
+	Created string `json:"created"`
 }
 
 // Server handles file upload requests.
@@ -509,6 +515,244 @@ func (s *Server) performDelete(targetPath string) error {
 	return nil
 }
 
+// HandleMkdir handles directory creation requests (POST /mkdir/<path>).
+// The final path component is the directory to be created.
+// Parent directories must already exist (no recursive mkdir).
+//
+// SECURITY CRITICAL:
+// - Uses Lstat to avoid following symlinks
+// - Validates path is strictly within base directory
+// - Rejects path traversal, absolute paths, and symlink escapes
+// - Rejects directory names with path separators or null bytes
+func (s *Server) HandleMkdir(w http.ResponseWriter, r *http.Request) {
+	// Only allow POST method
+	if r.Method != http.MethodPost {
+		s.errorResponse(w, http.StatusMethodNotAllowed, "only POST method is allowed")
+		return
+	}
+
+	// Extract target path from URL
+	targetPath := strings.TrimPrefix(r.URL.Path, s.config.MkdirPrefix)
+	targetPath = strings.TrimPrefix(targetPath, "/")
+	targetPath = strings.TrimSuffix(targetPath, "/") // Normalize trailing slash
+
+	// Resolve and validate target path for directory creation
+	resolvedPath, virtualPath, err := s.resolveMkdirPath(targetPath)
+	if err != nil {
+		var pathErr *PathError
+		if errors.As(err, &pathErr) {
+			s.errorResponse(w, pathErr.StatusCode, pathErr.Message)
+			return
+		}
+		log.Printf("ERROR: mkdir path resolution failed: %v", err)
+		s.errorResponse(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	// Create the directory
+	if err := s.performMkdir(resolvedPath); err != nil {
+		var pathErr *PathError
+		if errors.As(err, &pathErr) {
+			s.errorResponse(w, pathErr.StatusCode, pathErr.Message)
+			return
+		}
+		log.Printf("ERROR: mkdir failed for %s: %v", resolvedPath, err)
+		s.errorResponse(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	log.Printf("OK: created directory %s", resolvedPath)
+	s.jsonResponse(w, http.StatusCreated, MkdirResponse{Created: virtualPath + "/"})
+}
+
+// resolveMkdirPath validates and resolves a path for directory creation.
+// Returns the resolved filesystem path and the virtual path (for response).
+//
+// SECURITY CRITICAL: This function prevents path traversal and symlink escape.
+// It uses Lstat (not Stat) to avoid following symlinks.
+func (s *Server) resolveMkdirPath(urlPath string) (string, string, error) {
+	// Reject empty path (would create base directory itself)
+	if urlPath == "" || urlPath == "." {
+		return "", "", &PathError{
+			StatusCode: http.StatusForbidden,
+			Message:    "cannot create base directory",
+		}
+	}
+
+	// Clean the path to normalize . and .. components
+	cleanPath := filepath.Clean(urlPath)
+
+	// Reject paths containing .. after cleaning
+	// filepath.Clean resolves .., so if it still contains .., something is wrong
+	if strings.Contains(cleanPath, "..") {
+		return "", "", &PathError{
+			StatusCode: http.StatusBadRequest,
+			Message:    "invalid path: contains parent directory reference",
+		}
+	}
+
+	// Reject absolute paths
+	if filepath.IsAbs(cleanPath) {
+		return "", "", &PathError{
+			StatusCode: http.StatusBadRequest,
+			Message:    "invalid path: absolute paths not allowed",
+		}
+	}
+
+	// Split into parent directory and new directory name
+	parentPath := filepath.Dir(cleanPath)
+	dirName := filepath.Base(cleanPath)
+
+	// SECURITY: Validate directory name independently
+	// Reject names containing path separators (should be caught by filepath.Base, but extra safety)
+	if strings.ContainsAny(dirName, "/\\") {
+		return "", "", &PathError{
+			StatusCode: http.StatusBadRequest,
+			Message:    "invalid directory name: contains path separator",
+		}
+	}
+
+	// Reject names containing null bytes
+	if strings.ContainsRune(dirName, '\x00') {
+		return "", "", &PathError{
+			StatusCode: http.StatusBadRequest,
+			Message:    "invalid directory name: contains null byte",
+		}
+	}
+
+	// Reject empty or special names
+	if dirName == "" || dirName == "." || dirName == ".." {
+		return "", "", &PathError{
+			StatusCode: http.StatusBadRequest,
+			Message:    "invalid directory name",
+		}
+	}
+
+	// Construct full target path
+	targetPath := filepath.Join(s.config.BaseDir, cleanPath)
+
+	// CRITICAL: Verify the target is strictly within base directory
+	// Use filepath.Rel to check containment
+	relPath, err := filepath.Rel(s.config.BaseDir, targetPath)
+	if err != nil || strings.HasPrefix(relPath, "..") || relPath == "." {
+		return "", "", &PathError{
+			StatusCode: http.StatusForbidden,
+			Message:    "invalid path: escapes base directory",
+		}
+	}
+
+	// Construct parent path in filesystem
+	parentFullPath := filepath.Join(s.config.BaseDir, parentPath)
+
+	// Verify parent directory exists and is a directory (not a symlink)
+	parentInfo, err := os.Lstat(parentFullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", "", &PathError{
+				StatusCode: http.StatusNotFound,
+				Message:    "parent directory does not exist",
+			}
+		}
+		return "", "", fmt.Errorf("failed to stat parent: %w", err)
+	}
+
+	// SECURITY: Reject if parent is a symlink
+	if parentInfo.Mode()&os.ModeSymlink != 0 {
+		return "", "", &PathError{
+			StatusCode: http.StatusForbidden,
+			Message:    "cannot create directory under symlink",
+		}
+	}
+
+	if !parentInfo.IsDir() {
+		return "", "", &PathError{
+			StatusCode: http.StatusBadRequest,
+			Message:    "parent path is not a directory",
+		}
+	}
+
+	// CRITICAL: Verify parent resolved path is still within base directory
+	// This catches symlink escapes in the parent path
+	realParent, err := filepath.EvalSymlinks(parentFullPath)
+	if err != nil {
+		return "", "", &PathError{
+			StatusCode: http.StatusNotFound,
+			Message:    "parent directory not accessible",
+		}
+	}
+
+	// Also resolve base directory for comparison (handles symlinks in base path)
+	realBase, err := filepath.EvalSymlinks(s.config.BaseDir)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to resolve base directory: %w", err)
+	}
+
+	relParent, err := filepath.Rel(realBase, realParent)
+	if err != nil || strings.HasPrefix(relParent, "..") {
+		return "", "", &PathError{
+			StatusCode: http.StatusForbidden,
+			Message:    "parent directory escapes base directory",
+		}
+	}
+
+	// Return the resolved path (using the real parent path)
+	resolvedTarget := filepath.Join(realParent, dirName)
+
+	return resolvedTarget, cleanPath, nil
+}
+
+// performMkdir creates a new directory with safe permissions.
+// SECURITY: Never follows symlinks, verifies target doesn't already exist.
+func (s *Server) performMkdir(targetPath string) error {
+	// Check if target already exists using Lstat (don't follow symlinks)
+	info, err := os.Lstat(targetPath)
+	if err == nil {
+		// Path exists
+		if info.IsDir() {
+			return &PathError{
+				StatusCode: http.StatusConflict,
+				Message:    "directory already exists",
+			}
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return &PathError{
+				StatusCode: http.StatusConflict,
+				Message:    "path exists as symlink",
+			}
+		}
+		return &PathError{
+			StatusCode: http.StatusConflict,
+			Message:    "path already exists as file",
+		}
+	}
+
+	if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to check target path: %w", err)
+	}
+
+	// Create directory with safe permissions (0755 = rwxr-xr-x)
+	// Using os.Mkdir (not MkdirAll) to avoid recursive creation
+	const dirPermissions = 0755
+	if err := os.Mkdir(targetPath, dirPermissions); err != nil {
+		if os.IsExist(err) {
+			// Race condition: directory was created between check and mkdir
+			return &PathError{
+				StatusCode: http.StatusConflict,
+				Message:    "directory already exists",
+			}
+		}
+		if os.IsPermission(err) {
+			return &PathError{
+				StatusCode: http.StatusForbidden,
+				Message:    "permission denied",
+			}
+		}
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	return nil
+}
+
 func main() {
 	// Determine default base directory from environment or fallback
 	defaultBaseDir := os.Getenv("UPLOAD_BASE_DIR")
@@ -522,6 +766,7 @@ func main() {
 	maxSize := flag.Int64("max-size", 2*1024*1024*1024, "Maximum upload size in bytes (default: 2GB)")
 	uploadPrefix := flag.String("upload-prefix", "/upload", "URL prefix for upload endpoint")
 	deletePrefix := flag.String("delete-prefix", "/delete", "URL prefix for delete endpoint")
+	mkdirPrefix := flag.String("mkdir-prefix", "/mkdir", "URL prefix for mkdir endpoint")
 	flag.Parse()
 
 	// Create server
@@ -531,6 +776,7 @@ func main() {
 		MaxUploadSize: *maxSize,
 		UploadPrefix:  *uploadPrefix,
 		DeletePrefix:  *deletePrefix,
+		MkdirPrefix:   *mkdirPrefix,
 	}
 
 	server, err := NewServer(cfg)
@@ -542,6 +788,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc(cfg.UploadPrefix+"/", server.HandleUpload)
 	mux.HandleFunc(cfg.DeletePrefix+"/", server.HandleDelete)
+	mux.HandleFunc(cfg.MkdirPrefix+"/", server.HandleMkdir)
 
 	// Health check endpoint
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -581,6 +828,7 @@ func main() {
 	log.Printf("Max upload size: %d bytes (%.2f GB)", cfg.MaxUploadSize, float64(cfg.MaxUploadSize)/(1024*1024*1024))
 	log.Printf("Upload prefix: %s", cfg.UploadPrefix)
 	log.Printf("Delete prefix: %s", cfg.DeletePrefix)
+	log.Printf("Mkdir prefix: %s", cfg.MkdirPrefix)
 
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server error: %v", err)

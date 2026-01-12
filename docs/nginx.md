@@ -1,6 +1,6 @@
 # Nginx Integration
 
-This document explains how to integrate the file service (upload & delete) with Nginx.
+This document explains how to integrate the file service (upload, delete & mkdir) with Nginx.
 
 ## Prerequisites
 
@@ -14,7 +14,7 @@ Add this to your Nginx server block:
 
 ```nginx
 # =============================================================================
-# FILE SERVICE - Nginx Configuration (Upload & Delete)
+# FILE SERVICE - Nginx Configuration (Upload, Delete & Mkdir)
 # =============================================================================
 
 # Maximum upload size (must match or exceed Go service's -max-size)
@@ -79,6 +79,18 @@ location /delete/ {
     proxy_set_header X-Forwarded-Proto $scheme;
 }
 
+# Mkdir endpoint - proxy to Go service
+location /mkdir/ {
+    # Proxy to file service
+    proxy_pass http://127.0.0.1:8080;
+    
+    # Required headers
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
 # Health check endpoint (optional, useful for load balancers)
 location = /health {
     proxy_pass http://127.0.0.1:8080/health;
@@ -123,6 +135,14 @@ server {
     
     # Delete API
     location /delete/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+    
+    # Mkdir API
+    location /mkdir/ {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -190,8 +210,17 @@ curl -X POST -F "file=@test.txt" http://localhost/upload/test/
 # Check the file was created
 curl http://localhost/files/test/test.txt
 
+# Create a new directory
+curl -X POST http://localhost/mkdir/photos/2026/
+
+# Verify directory appears in listing
+curl http://localhost/files/photos/
+
+# Delete an empty directory
+curl -X DELETE http://localhost/delete/photos/2026/
+
 # Test health endpoint
-curl http://localhost/upload/health
+curl http://localhost/health
 ```
 
 ## Troubleshooting
