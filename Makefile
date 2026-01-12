@@ -1,7 +1,10 @@
 .PHONY: build test clean run docker
 
 # Binary name
-BINARY=upload-server
+BINARY=files-svc
+
+# Build directory
+BUILD_DIR=build
 
 # Build flags
 LDFLAGS=-ldflags="-s -w"
@@ -11,7 +14,8 @@ all: build
 
 # Build the binary
 build:
-	go build $(LDFLAGS) -o $(BINARY) .
+	mkdir -p $(BUILD_DIR)
+	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY) ./cmd/files-svc
 
 # Run tests
 test:
@@ -24,12 +28,12 @@ coverage:
 
 # Clean build artifacts
 clean:
-	rm -f $(BINARY) coverage.out coverage.html
+	rm -rf $(BUILD_DIR) coverage.out coverage.html
 
 # Run locally (requires /tmp/files to exist)
 run: build
 	mkdir -p /tmp/files
-	./$(BINARY) -base-dir /tmp/files -listen :8080
+	./$(BUILD_DIR)/$(BINARY) -base-dir /tmp/files -listen :8080
 
 # Build Docker image
 docker:
@@ -49,5 +53,5 @@ lint:
 
 # Install to system (requires sudo)
 install: build
-	sudo cp $(BINARY) /usr/local/bin/
+	sudo cp $(BUILD_DIR)/$(BINARY) /usr/local/bin/
 	sudo chmod 755 /usr/local/bin/$(BINARY)

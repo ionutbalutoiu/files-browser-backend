@@ -1,6 +1,6 @@
-# File Service
+# files-svc
 
-A secure, minimal Go service for handling file uploads, deletions, and directory creation via HTTP, designed to run behind Nginx.
+A secure, minimal Go service for handling file uploads, deletions, and directory creation via HTTP. Designed to run behind Nginx or another reverse proxy.
 
 ## Features
 
@@ -14,36 +14,70 @@ A secure, minimal Go service for handling file uploads, deletions, and directory
 - **Safe writes** - files are synced to disk before success response
 - **Graceful shutdown** - in-progress operations complete before shutdown
 
+## Project Structure
+
+```
+.
+├── cmd/
+│   └── files-svc/
+│       └── main.go            # Entry point (flags, config, startup)
+├── internal/
+│   ├── config/                # Configuration loading & defaults
+│   │   └── config.go
+│   ├── server/                # HTTP server wiring
+│   │   └── server.go
+│   ├── handlers/              # HTTP handlers
+│   │   ├── upload.go
+│   │   ├── delete.go
+│   │   ├── mkdir.go
+│   │   └── health.go
+│   ├── fs/                    # Filesystem operations
+│   │   └── ops.go
+│   └── pathutil/              # Path validation & normalization
+│       └── util.go
+├── docs/
+│   ├── api.md                 # HTTP API documentation
+│   ├── deployment.md          # Deployment guide
+│   ├── nginx.md               # Nginx integration
+│   └── spa-integration.md     # SPA integration guide
+├── go.mod
+├── go.sum
+├── Dockerfile
+├── Makefile
+└── README.md
+```
+
 ## Build
 
 ```bash
 # Build the binary
-go build -o upload-server .
+go build -o files-svc ./cmd/files-svc
 
 # Or with optimizations
-go build -ldflags="-s -w" -o upload-server .
+go build -ldflags="-s -w" -o files-svc ./cmd/files-svc
 ```
 
 ## Usage
 
 ```bash
 # Run with defaults (listens on :8080, base dir /srv/files, max 2GB)
-./upload-server
+./files-svc
+
+# Specify base directory
+./files-svc --base-dir /srv/files
 
 # Custom configuration
-./upload-server \
+./files-svc \
   -listen :9000 \
   -base-dir /var/www/files \
-  -max-size 104857600 \
-  -upload-prefix /upload \
-  -delete-prefix /delete \
-  -mkdir-prefix /mkdir
+  -max-upload-size 104857600
 
-# Using environment variable for base dir
-UPLOAD_BASE_DIR=/var/www/files ./upload-server
+# Using environment variables
+FILES_SVC_UPLOAD_BASE_DIR=/var/www/files ./files-svc
+FILES_SVC_MAX_UPLOAD_SIZE=104857600 ./files-svc
 
 # Show help
-./upload-server -help
+./files-svc -help
 ```
 
 ### Command-Line Options
@@ -51,186 +85,96 @@ UPLOAD_BASE_DIR=/var/www/files ./upload-server
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-listen` | `:8080` | Address and port to listen on |
-| `-base-dir` | `/srv/files` | Base directory for file storage (env: `UPLOAD_BASE_DIR`) |
-| `-max-size` | `2147483648` (2GB) | Maximum upload size in bytes |
-| `-upload-prefix` | `/upload` | URL prefix for upload endpoint |
-| `-delete-prefix` | `/delete` | URL prefix for delete endpoint |
-| `-mkdir-prefix` | `/mkdir` | URL prefix for mkdir endpoint |
+| `-base-dir` | `/srv/files` | Base directory for file storage (env: `FILES_SVC_UPLOAD_BASE_DIR`) |
+| `-max-upload-size` | `2147483648` (2GB) | Maximum upload size in bytes (env: `FILES_SVC_MAX_UPLOAD_SIZE`) |
 
-## API
+## API Endpoints
 
-### Upload Files
+See [docs/api.md](docs/api.md) for complete API documentation.
 
-```http
-POST /upload/<path>/
-Content-Type: multipart/form-data
-```
+### Quick Reference
 
-- `<path>` maps to a subdirectory under the base files root
-- Multiple files can be sent in a single request
-- Form field name can be anything (commonly `file` or `files`)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/upload/<path>/` | POST | Upload files to directory |
+| `/delete/<path>` | DELETE | Delete file or empty directory |
+| `/mkdir/<path>/` | POST | Create new directory |
+| `/health` | GET | Health check |
 
-#### Example Request
+### Examples
 
 ```bash
-# Upload single file
+# Upload a file
 curl -X POST -F "file=@photo.jpg" http://localhost:8080/upload/photos/2026/
 
-# Upload multiple files
-curl -X POST \
-  -F "files=@doc1.pdf" \
-  -F "files=@doc2.pdf" \
-  -F "files=@doc3.pdf" \
-  http://localhost:8080/upload/documents/
-
-# Upload to root directory
-curl -X POST -F "file=@readme.txt" http://localhost:8080/upload/
-```
-
-#### Response
-
-**Success (201 Created):**
-```json
-{
-  "uploaded": ["photo.jpg"],
-  "skipped": []
-}
-```
-
-**Partial Success (201 Created):**
-```json
-{
-  "uploaded": ["new-file.txt"],
-  "skipped": ["existing-file.txt"]
-}
-```
-
-**All Skipped (409 Conflict):**
-```json
-{
-  "uploaded": [],
-  "skipped": ["existing-file.txt"]
-}
-```
-
-**Error:**
-```json
-{
-  "error": "description of the error"
-}
-```
-
-#### HTTP Status Codes
-
-| Code | Meaning |
-|------|---------|
-| 201 | At least one file uploaded successfully |
-| 400 | Malformed request (bad path, bad content type, invalid filename) |
-| 404 | Invalid target path |
-| 405 | Method not allowed (only POST is accepted) |
-| 409 | All files skipped due to conflicts (files already exist) |
-| 413 | Upload size exceeds limit |
-| 500 | Internal server error |
-
-### Delete File or Directory
-
-```http
-DELETE /delete/<path>
-```
-
-- `<path>` maps to a file or directory under the base files root
-- Directories can only be deleted if empty
-- Symlinks are rejected (cannot be deleted)
-
-#### Example Requests
-
-```bash
 # Delete a file
-curl -X DELETE http://localhost:8080/delete/photos/2026/image.jpg
+curl -X DELETE http://localhost:8080/delete/photos/2026/photo.jpg
 
-# Delete an empty directory
-curl -X DELETE http://localhost:8080/delete/photos/2026/
-
-# Verbose output to see status
-curl -v -X DELETE http://localhost:8080/delete/docs/old-file.pdf
-```
-
-#### HTTP Status Codes
-
-| Code | Meaning |
-|------|---------|
-| 204 | Successfully deleted |
-| 400 | Invalid path (traversal attempt, symlink, etc.) |
-| 403 | Forbidden (e.g., trying to delete base directory) |
-| 404 | Path does not exist |
-| 405 | Method not allowed (only DELETE is accepted) |
-| 409 | Directory is not empty |
-| 500 | Internal server error |
-### Create Directory
-
-```http
-POST /mkdir/<path>/
-```
-
-- `<path>` maps to the new directory path under the base files root
-- The final path component is the directory to be created
-- Parent directories must already exist (no recursive creation)
-- Symlinks in the path are rejected
-
-#### Example Requests
-
-```bash
-# Create a directory in root
-curl -X POST http://localhost:8080/mkdir/photos/
-
-# Create a nested directory (parent must exist)
+# Create a directory
 curl -X POST http://localhost:8080/mkdir/photos/2026/
 
-# Create another level
-curl -X POST http://localhost:8080/mkdir/photos/2026/vacation/
+# Health check
+curl http://localhost:8080/health
 ```
 
-#### Response
+## Nginx Integration
 
-**Success (201 Created):**
-```json
-{
-  "created": "photos/2026/"
+The service is designed to run behind Nginx. Add this to your Nginx server block:
+
+```nginx
+# Maximum upload size (must match or exceed Go service's -max-size)
+client_max_body_size 2G;
+
+# Serve static files directly
+location /files/ {
+    alias /srv/files/;
+    autoindex on;
+    autoindex_format json;
+}
+
+# Upload endpoint - proxy to Go service
+location /upload/ {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_request_buffering off;
+    proxy_connect_timeout 300;
+    proxy_send_timeout 600;
+    proxy_read_timeout 600;
+}
+
+# Delete endpoint - proxy to Go service
+location /delete/ {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+
+# Mkdir endpoint - proxy to Go service
+location /mkdir/ {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+
+# Health check endpoint
+location = /health {
+    proxy_pass http://127.0.0.1:8080/health;
+    proxy_set_header Host $host;
 }
 ```
 
-**Error:**
-```json
-{
-  "error": "description of the error"
-}
-```
-
-#### HTTP Status Codes
-
-| Code | Meaning |
-|------|---------||
-| 201 | Directory created successfully |
-| 400 | Invalid path or directory name |
-| 403 | Forbidden (e.g., trying to create base directory, symlink escape) |
-| 404 | Parent directory does not exist |
-| 405 | Method not allowed (only POST is accepted) |
-| 409 | Directory or file already exists at path |
-| 500 | Internal server error |
-### Health Check
-
-```http
-GET /health
-```
-
-Returns `200 OK` with body `OK`.
+See [docs/nginx.md](docs/nginx.md) for complete Nginx configuration.
 
 ## Security Considerations
 
 ### What's Protected
 
 1. **Path Traversal** - `../` sequences and absolute paths are rejected
-2. **Symlink Escape** - symlinks that escape the base directory are rejected  
+2. **Symlink Escape** - symlinks that escape the base directory are rejected
 3. **Hidden Files** - files starting with `.` are rejected
 4. **Empty Filenames** - rejected
 5. **Overwrite Prevention** - existing files cannot be overwritten
@@ -244,24 +188,27 @@ Returns `200 OK` with body `OK`.
 - **Rate Limiting** - implement at the Nginx layer
 - **File Type Validation** - any file type is accepted
 
-### Filename Handling
-
-- Original filenames are preserved (base name only)
-- Path components in filenames are stripped (`foo/bar/file.txt` → `file.txt`)
-- Files starting with `.` are rejected (prevents `.htaccess`, `.env`, etc.)
-
 ## Testing
 
 ```bash
+# Run all tests
+go test ./...
+
+# Run tests with verbose output
 go test -v ./...
+
+# Run tests for specific package
+go test -v ./internal/handlers/...
 ```
 
-## Assumptions & Design Decisions
+## Deployment
 
-1. **Filename Preservation** - original filenames are kept; no sanitization beyond safety checks
-2. **Directory Creation** - target directories are created with mode `0755`
-3. **File Permissions** - uploaded files are created with mode `0644`
-4. **No Timeout** - read/write timeouts are disabled to support large uploads over slow connections
-5. **Memory Buffer** - 32MB memory buffer per request; larger files stream through temp files
-6. **Atomic Writes** - uses `O_EXCL` flag to prevent race conditions on file creation
-7. **Sync to Disk** - `fsync` is called before returning success to ensure durability
+See [docs/deployment.md](docs/deployment.md) for deployment options including:
+
+- systemd service configuration
+- Docker deployment
+- Security hardening
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.

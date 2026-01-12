@@ -2,8 +2,9 @@ FROM golang:1.25-alpine AS builder
 
 WORKDIR /build
 COPY go.mod ./
-COPY *.go ./
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o upload-server .
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o files-svc ./cmd/files-svc
 
 FROM alpine:3.23
 
@@ -11,7 +12,7 @@ FROM alpine:3.23
 RUN adduser -D -u 101 uploader
 
 WORKDIR /app
-COPY --from=builder /build/upload-server .
+COPY --from=builder /build/files-svc .
 
 # Create data directory
 RUN mkdir -p /data && chown uploader:uploader /data
@@ -22,5 +23,5 @@ ENV UPLOAD_BASE_DIR=/data
 USER uploader
 EXPOSE 8080
 
-ENTRYPOINT ["/app/upload-server"]
-CMD ["-listen", ":8080", "-max-size", "2147483648"]
+ENTRYPOINT ["/app/files-svc"]
+CMD ["-listen", ":8080"]

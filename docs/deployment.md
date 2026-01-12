@@ -1,26 +1,25 @@
 # Deployment
 
-This document covers deployment options for the upload service.
+This document covers deployment options for the file service.
 
 ## systemd Service
 
-Create `/etc/systemd/system/upload-server.service`:
+Create `/etc/systemd/system/files-svc.service`:
 
 ```ini
 [Unit]
-Description=File Upload Service
+Description=File Service
 After=network.target
 
 [Service]
 Type=simple
-User=upload-svc
+User=files-svc
 Group=www-data
-WorkingDirectory=/opt/upload-server
-ExecStart=/opt/upload-server/upload-server \
+WorkingDirectory=/opt/files-svc
+ExecStart=/opt/files-svc/files-svc \
     -listen 127.0.0.1:8080 \
     -base-dir /srv/files \
-    -max-size 2147483648 \
-    -prefix /upload
+    -max-size 2147483648
 Restart=always
 RestartSec=5
 
@@ -34,7 +33,7 @@ PrivateTmp=true
 # Logging
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=upload-server
+SyslogIdentifier=files-svc
 
 [Install]
 WantedBy=multi-user.target
@@ -44,28 +43,28 @@ WantedBy=multi-user.target
 
 ```bash
 # Create service user
-sudo useradd -r -s /bin/false upload-svc
+sudo useradd -r -s /bin/false files-svc
 
 # Create directories
-sudo mkdir -p /opt/upload-server /srv/files
+sudo mkdir -p /opt/files-svc /srv/files
 
 # Copy binary
-sudo cp upload-server /opt/upload-server/
-sudo chown -R root:root /opt/upload-server
-sudo chmod 755 /opt/upload-server/upload-server
+sudo cp files-svc /opt/files-svc/
+sudo chown -R root:root /opt/files-svc
+sudo chmod 755 /opt/files-svc/files-svc
 
 # Set up files directory
-sudo chown upload-svc:www-data /srv/files
+sudo chown files-svc:www-data /srv/files
 sudo chmod 775 /srv/files
 
 # Enable and start service
 sudo systemctl daemon-reload
-sudo systemctl enable upload-server
-sudo systemctl start upload-server
+sudo systemctl enable files-svc
+sudo systemctl start files-svc
 
 # Check status
-sudo systemctl status upload-server
-sudo journalctl -u upload-server -f
+sudo systemctl status files-svc
+sudo journalctl -u files-svc -f
 ```
 
 ## Docker
@@ -73,23 +72,24 @@ sudo journalctl -u upload-server -f
 ### Dockerfile
 
 ```dockerfile
-FROM golang:1.23-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /build
 COPY go.mod ./
-COPY *.go ./
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o upload-server .
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o files-svc ./cmd/files-svc
 
-FROM alpine:3.19
+FROM alpine:3.23
 
 RUN adduser -D -u 1000 uploader
 WORKDIR /app
-COPY --from=builder /build/upload-server .
+COPY --from=builder /build/files-svc .
 
 USER uploader
 EXPOSE 8080
 
-ENTRYPOINT ["/app/upload-server"]
+ENTRYPOINT ["/app/files-svc"]
 CMD ["-listen", ":8080", "-base-dir", "/data", "-max-size", "2147483648"]
 ```
 
@@ -97,21 +97,21 @@ CMD ["-listen", ":8080", "-base-dir", "/data", "-max-size", "2147483648"]
 
 ```bash
 # Build image
-docker build -t upload-server .
+docker build -t files-svc .
 
 # Run container
 docker run -d \
-    --name upload-server \
+    --name files-svc \
     -p 8080:8080 \
     -v /srv/files:/data \
-    upload-server
+    files-svc
 
 # With custom settings
 docker run -d \
-    --name upload-server \
+    --name files-svc \
     -p 9000:9000 \
     -v /srv/files:/data \
-    upload-server \
+    files-svc \
     -listen :9000 \
     -base-dir /data \
     -max-size 1073741824
@@ -123,7 +123,7 @@ docker run -d \
 version: '3.8'
 
 services:
-  upload-server:
+  files-svc:
     build: .
     ports:
       - "8080:8080"
@@ -152,7 +152,7 @@ services:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./spa:/var/www/spa:ro
     depends_on:
-      - upload-server
+      - files-svc
 
 volumes:
   files-data:
@@ -164,12 +164,11 @@ If you prefer environment variables over flags, wrap the binary:
 
 ```bash
 #!/bin/bash
-# /opt/upload-server/run.sh
-exec /opt/upload-server/upload-server \
+# /opt/files-svc/run.sh
+exec /opt/files-svc/files-svc \
     -listen "${UPLOAD_LISTEN:-:8080}" \
     -base-dir "${UPLOAD_BASE_DIR:-/srv/files}" \
-    -max-size "${UPLOAD_MAX_SIZE:-2147483648}" \
-    -prefix "${UPLOAD_PREFIX:-/upload}"
+    -max-size "${UPLOAD_MAX_SIZE:-2147483648}"
 ```
 
 ## Health Checks
@@ -203,10 +202,10 @@ Logs go to stdout/stderr. In production:
 
 ```bash
 # View systemd logs
-journalctl -u upload-server -f
+journalctl -u files-svc -f
 
 # View Docker logs
-docker logs -f upload-server
+docker logs -f files-svc
 
 # Log format
 # 2026/01/12 10:30:45 OK: uploaded photo.jpg to /srv/files/photos/2026 (field: file)

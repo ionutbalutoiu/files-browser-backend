@@ -1,5 +1,5 @@
 # Binaries
-upload-server
+build/
 
 # Test coverage
 coverage.out
