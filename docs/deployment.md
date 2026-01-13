@@ -138,7 +138,7 @@ services:
       - "2147483648"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -173,16 +173,16 @@ exec /opt/files-svc/files-svc \
 
 ## Health Checks
 
-The service exposes `/health` for monitoring:
+The service exposes `/api/health` for monitoring:
 
 ```bash
 # Simple check
-curl -f http://localhost:8080/health
+curl -f http://localhost:8080/api/health
 
 # For Kubernetes liveness probe
 livenessProbe:
   httpGet:
-    path: /health
+    path: /api/health
     port: 8080
   initialDelaySeconds: 5
   periodSeconds: 10
@@ -190,7 +190,7 @@ livenessProbe:
 # For Kubernetes readiness probe
 readinessProbe:
   httpGet:
-    path: /health
+    path: /api/health
     port: 8080
   initialDelaySeconds: 2
   periodSeconds: 5

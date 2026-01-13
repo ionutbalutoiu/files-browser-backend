@@ -22,7 +22,7 @@ func TestDeleteFile(t *testing.T) {
 	os.MkdirAll(filepath.Join(tmpDir, "docs"), 0755)
 	os.WriteFile(filepath.Join(tmpDir, "docs", "test.txt"), []byte("content"), 0644)
 
-	req := httptest.NewRequest(http.MethodDelete, "/delete/docs/test.txt", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/delete/docs/test.txt", nil)
 	rr := httptest.NewRecorder()
 	deleteHandler.ServeHTTP(rr, req)
 
@@ -45,7 +45,7 @@ func TestDeleteEmptyDirectory(t *testing.T) {
 	// Create an empty directory
 	os.MkdirAll(filepath.Join(tmpDir, "empty-dir"), 0755)
 
-	req := httptest.NewRequest(http.MethodDelete, "/delete/empty-dir/", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/delete/empty-dir/", nil)
 	rr := httptest.NewRecorder()
 	deleteHandler.ServeHTTP(rr, req)
 
@@ -69,7 +69,7 @@ func TestDeleteNonEmptyDirectory(t *testing.T) {
 	os.MkdirAll(filepath.Join(tmpDir, "non-empty"), 0755)
 	os.WriteFile(filepath.Join(tmpDir, "non-empty", "file.txt"), []byte("content"), 0644)
 
-	req := httptest.NewRequest(http.MethodDelete, "/delete/non-empty/", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/delete/non-empty/", nil)
 	rr := httptest.NewRecorder()
 	deleteHandler.ServeHTTP(rr, req)
 
@@ -89,7 +89,7 @@ func TestDeleteNonExistent(t *testing.T) {
 
 	deleteHandler := handlers.NewDeleteHandler(cfg)
 
-	req := httptest.NewRequest(http.MethodDelete, "/delete/does-not-exist.txt", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/delete/does-not-exist.txt", nil)
 	rr := httptest.NewRecorder()
 	deleteHandler.ServeHTTP(rr, req)
 
@@ -105,7 +105,7 @@ func TestDeleteBaseDirectory(t *testing.T) {
 	deleteHandler := handlers.NewDeleteHandler(cfg)
 
 	// Try to delete base directory with empty path
-	req := httptest.NewRequest(http.MethodDelete, "/delete/", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/delete/", nil)
 	rr := httptest.NewRecorder()
 	deleteHandler.ServeHTTP(rr, req)
 
@@ -124,9 +124,9 @@ func TestDeletePathTraversal(t *testing.T) {
 		name string
 		path string
 	}{
-		{"double dot", "/delete/../etc/passwd"},
-		{"encoded double dot", "/delete/..%2F..%2Fetc%2Fpasswd"},
-		{"hidden traversal", "/delete/foo/../../etc/passwd"},
+		{"double dot", "/api/delete/../etc/passwd"},
+		{"encoded double dot", "/api/delete/..%2F..%2Fetc%2Fpasswd"},
+		{"hidden traversal", "/api/delete/foo/../../etc/passwd"},
 	}
 
 	for _, tt := range tests {
@@ -155,7 +155,7 @@ func TestDeleteSymlink(t *testing.T) {
 	symlinkPath := filepath.Join(tmpDir, "link.txt")
 	os.Symlink(realFile, symlinkPath)
 
-	req := httptest.NewRequest(http.MethodDelete, "/delete/link.txt", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/delete/link.txt", nil)
 	rr := httptest.NewRecorder()
 	deleteHandler.ServeHTTP(rr, req)
 
@@ -181,7 +181,7 @@ func TestDeleteMethodNotAllowed(t *testing.T) {
 	methods := []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch}
 
 	for _, method := range methods {
-		req := httptest.NewRequest(method, "/delete/test.txt", nil)
+		req := httptest.NewRequest(method, "/api/delete/test.txt", nil)
 		rr := httptest.NewRecorder()
 		deleteHandler.ServeHTTP(rr, req)
 
@@ -197,7 +197,7 @@ func TestDeleteAbsolutePath(t *testing.T) {
 
 	deleteHandler := handlers.NewDeleteHandler(cfg)
 
-	req := httptest.NewRequest(http.MethodDelete, "/delete//etc/passwd", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/api/delete//etc/passwd", nil)
 	rr := httptest.NewRecorder()
 	deleteHandler.ServeHTTP(rr, req)
 
@@ -224,7 +224,7 @@ func TestMkdirSimple(t *testing.T) {
 	_, mkdirHandler, tmpDir := setupMkdirHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	req := httptest.NewRequest(http.MethodPost, "/mkdir/newdir/", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/mkdir/newdir/", nil)
 	rr := httptest.NewRecorder()
 	mkdirHandler.ServeHTTP(rr, req)
 
@@ -258,7 +258,7 @@ func TestMkdirNested(t *testing.T) {
 	// Create parent directory first
 	os.MkdirAll(filepath.Join(tmpDir, "photos/2026"), 0755)
 
-	req := httptest.NewRequest(http.MethodPost, "/mkdir/photos/2026/vacation/", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/mkdir/photos/2026/vacation/", nil)
 	rr := httptest.NewRecorder()
 	mkdirHandler.ServeHTTP(rr, req)
 
@@ -288,7 +288,7 @@ func TestMkdirParentNotExist(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Try to create nested directory without creating parent first
-	req := httptest.NewRequest(http.MethodPost, "/mkdir/nonexistent/subdir/", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/mkdir/nonexistent/subdir/", nil)
 	rr := httptest.NewRecorder()
 	mkdirHandler.ServeHTTP(rr, req)
 
@@ -304,7 +304,7 @@ func TestMkdirAlreadyExists(t *testing.T) {
 	// Create directory first
 	os.MkdirAll(filepath.Join(tmpDir, "existing"), 0755)
 
-	req := httptest.NewRequest(http.MethodPost, "/mkdir/existing/", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/mkdir/existing/", nil)
 	rr := httptest.NewRecorder()
 	mkdirHandler.ServeHTTP(rr, req)
 
@@ -320,7 +320,7 @@ func TestMkdirFileExists(t *testing.T) {
 	// Create a file with the target name
 	os.WriteFile(filepath.Join(tmpDir, "myfile"), []byte("content"), 0644)
 
-	req := httptest.NewRequest(http.MethodPost, "/mkdir/myfile/", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/mkdir/myfile/", nil)
 	rr := httptest.NewRecorder()
 	mkdirHandler.ServeHTTP(rr, req)
 
@@ -334,7 +334,7 @@ func TestMkdirBaseDirectory(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	// Try to create base directory (empty path)
-	req := httptest.NewRequest(http.MethodPost, "/mkdir/", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/mkdir/", nil)
 	rr := httptest.NewRecorder()
 	mkdirHandler.ServeHTTP(rr, req)
 
@@ -351,9 +351,9 @@ func TestMkdirPathTraversal(t *testing.T) {
 		name string
 		path string
 	}{
-		{"double dot", "/mkdir/../escape/"},
-		{"hidden traversal", "/mkdir/foo/../../escape/"},
-		{"triple dot escape", "/mkdir/foo/../../../escape/"},
+		{"double dot", "/api/mkdir/../escape/"},
+		{"hidden traversal", "/api/mkdir/foo/../../escape/"},
+		{"triple dot escape", "/api/mkdir/foo/../../../escape/"},
 	}
 
 	for _, tt := range tests {
@@ -373,7 +373,7 @@ func TestMkdirAbsolutePath(t *testing.T) {
 	_, mkdirHandler, tmpDir := setupMkdirHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	req := httptest.NewRequest(http.MethodPost, "/mkdir//etc/passwd/", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/mkdir//etc/passwd/", nil)
 	rr := httptest.NewRecorder()
 	mkdirHandler.ServeHTTP(rr, req)
 
@@ -399,7 +399,7 @@ func TestMkdirSymlinkParent(t *testing.T) {
 	os.Symlink(outsideDir, symlinkPath)
 
 	// Try to create directory under the symlink
-	req := httptest.NewRequest(http.MethodPost, "/mkdir/escape-link/newdir/", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/mkdir/escape-link/newdir/", nil)
 	rr := httptest.NewRecorder()
 	mkdirHandler.ServeHTTP(rr, req)
 
@@ -425,7 +425,7 @@ func TestMkdirSymlinkTarget(t *testing.T) {
 	os.Symlink(filepath.Join(tmpDir, "realdir"), symlinkPath)
 
 	// Try to create the symlink as a directory
-	req := httptest.NewRequest(http.MethodPost, "/mkdir/link/", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/mkdir/link/", nil)
 	rr := httptest.NewRecorder()
 	mkdirHandler.ServeHTTP(rr, req)
 
@@ -442,7 +442,7 @@ func TestMkdirMethodNotAllowed(t *testing.T) {
 	methods := []string{http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodPatch}
 
 	for _, method := range methods {
-		req := httptest.NewRequest(method, "/mkdir/test/", nil)
+		req := httptest.NewRequest(method, "/api/mkdir/test/", nil)
 		rr := httptest.NewRecorder()
 		mkdirHandler.ServeHTTP(rr, req)
 
@@ -456,7 +456,7 @@ func TestMkdirDirectoryWithSpaces(t *testing.T) {
 	_, mkdirHandler, tmpDir := setupMkdirHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	req := httptest.NewRequest(http.MethodPost, "/mkdir/my%20folder/", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/mkdir/my%20folder/", nil)
 	rr := httptest.NewRecorder()
 	mkdirHandler.ServeHTTP(rr, req)
 
@@ -478,7 +478,7 @@ func TestMkdirPermissions(t *testing.T) {
 	_, mkdirHandler, tmpDir := setupMkdirHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	req := httptest.NewRequest(http.MethodPost, "/mkdir/permtest/", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/mkdir/permtest/", nil)
 	rr := httptest.NewRecorder()
 	mkdirHandler.ServeHTTP(rr, req)
 
@@ -507,7 +507,7 @@ func TestMkdirParentIsFile(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "notadir"), []byte("content"), 0644)
 
 	// Try to create subdirectory under the file
-	req := httptest.NewRequest(http.MethodPost, "/mkdir/notadir/subdir/", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/mkdir/notadir/subdir/", nil)
 	rr := httptest.NewRecorder()
 	mkdirHandler.ServeHTTP(rr, req)
 

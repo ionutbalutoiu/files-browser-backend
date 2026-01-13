@@ -44,7 +44,7 @@ func (h *RenameHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract old path from URL
-	oldPath := strings.TrimPrefix(r.URL.Path, "/rename")
+	oldPath := strings.TrimPrefix(r.URL.Path, "/api/rename")
 	oldPath = strings.TrimPrefix(oldPath, "/")
 	oldPath = strings.TrimSuffix(oldPath, "/") // Normalize trailing slash
 

@@ -20,7 +20,7 @@ All endpoints return JSON responses on errors. Content-Type is `application/json
 ### Upload Files
 
 ```
-POST /upload/<path>/
+POST /api/upload/<path>/
 ```
 
 Upload one or more files to the specified directory path.
@@ -36,17 +36,17 @@ Upload one or more files to the specified directory path.
 
 ```bash
 # Upload single file to root
-curl -X POST -F "file=@photo.jpg" http://localhost:8080/upload/
+curl -X POST -F "file=@photo.jpg" http://localhost:8080/api/upload/
 
 # Upload single file to subdirectory
-curl -X POST -F "file=@photo.jpg" http://localhost:8080/upload/photos/2026/
+curl -X POST -F "file=@photo.jpg" http://localhost:8080/api/upload/photos/2026/
 
 # Upload multiple files
 curl -X POST \
   -F "files=@doc1.pdf" \
   -F "files=@doc2.pdf" \
   -F "files=@doc3.pdf" \
-  http://localhost:8080/upload/documents/
+  http://localhost:8080/api/upload/documents/
 ```
 
 #### Response
@@ -106,7 +106,7 @@ curl -X POST \
 ### Delete File or Directory
 
 ```
-DELETE /delete/<path>
+DELETE /api/delete/<path>
 ```
 
 Delete a file or empty directory at the specified path.
@@ -121,13 +121,13 @@ Delete a file or empty directory at the specified path.
 
 ```bash
 # Delete a file
-curl -X DELETE http://localhost:8080/delete/photos/2026/image.jpg
+curl -X DELETE http://localhost:8080/api/delete/photos/2026/image.jpg
 
 # Delete an empty directory
-curl -X DELETE http://localhost:8080/delete/photos/2026/
+curl -X DELETE http://localhost:8080/api/delete/photos/2026/
 
 # With verbose output
-curl -v -X DELETE http://localhost:8080/delete/docs/old-file.pdf
+curl -v -X DELETE http://localhost:8080/api/delete/docs/old-file.pdf
 ```
 
 #### Response
@@ -164,7 +164,7 @@ curl -v -X DELETE http://localhost:8080/delete/docs/old-file.pdf
 ### Create Directory
 
 ```
-POST /mkdir/<path>/
+POST /api/mkdir/<path>/
 ```
 
 Create a new directory at the specified path.
@@ -180,13 +180,13 @@ Create a new directory at the specified path.
 
 ```bash
 # Create a directory in root
-curl -X POST http://localhost:8080/mkdir/photos/
+curl -X POST http://localhost:8080/api/mkdir/photos/
 
 # Create a nested directory (parent must exist)
-curl -X POST http://localhost:8080/mkdir/photos/2026/
+curl -X POST http://localhost:8080/api/mkdir/photos/2026/
 
 # Create another level
-curl -X POST http://localhost:8080/mkdir/photos/2026/vacation/
+curl -X POST http://localhost:8080/api/mkdir/photos/2026/vacation/
 ```
 
 #### Response
@@ -228,7 +228,7 @@ curl -X POST http://localhost:8080/mkdir/photos/2026/vacation/
 ### Rename File or Directory
 
 ```
-POST /rename/<oldPath>?newName=<newName>
+POST /api/rename/<oldPath>?newName=<newName>
 ```
 
 Rename a file or directory within the same parent directory.
@@ -245,13 +245,13 @@ Rename a file or directory within the same parent directory.
 
 ```bash
 # Rename a file
-curl -X POST "http://localhost:8080/rename/photos/old-name.jpg?newName=new-name.jpg"
+curl -X POST "http://localhost:8080/api/rename/photos/old-name.jpg?newName=new-name.jpg"
 
 # Rename a directory
-curl -X POST "http://localhost:8080/rename/documents/old-folder?newName=new-folder"
+curl -X POST "http://localhost:8080/api/rename/documents/old-folder?newName=new-folder"
 
 # Using PATCH method
-curl -X PATCH "http://localhost:8080/rename/file.txt?newName=renamed.txt"
+curl -X PATCH "http://localhost:8080/api/rename/file.txt?newName=renamed.txt"
 ```
 
 #### Response
@@ -297,7 +297,7 @@ curl -X PATCH "http://localhost:8080/rename/file.txt?newName=renamed.txt"
 ### Health Check
 
 ```
-GET /health
+GET /api/health
 ```
 
 Returns the health status of the service.
@@ -310,7 +310,7 @@ Returns the health status of the service.
 #### Example Request
 
 ```bash
-curl http://localhost:8080/health
+curl http://localhost:8080/api/health
 ```
 
 #### Response

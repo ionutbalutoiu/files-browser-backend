@@ -43,7 +43,7 @@ func (h *MkdirHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract target path from URL
-	targetPath := strings.TrimPrefix(r.URL.Path, "/mkdir")
+	targetPath := strings.TrimPrefix(r.URL.Path, "/api/mkdir")
 	targetPath = strings.TrimPrefix(targetPath, "/")
 	targetPath = strings.TrimSuffix(targetPath, "/") // Normalize trailing slash
 

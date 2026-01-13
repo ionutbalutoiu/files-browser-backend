@@ -98,25 +98,29 @@ See [docs/api.md](docs/api.md) for complete API documentation.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/upload/<path>/` | POST | Upload files to directory |
-| `/delete/<path>` | DELETE | Delete file or empty directory |
-| `/mkdir/<path>/` | POST | Create new directory |
-| `/health` | GET | Health check |
+| `/api/upload/<path>/` | POST | Upload files to directory |
+| `/api/delete/<path>` | DELETE | Delete file or empty directory |
+| `/api/mkdir/<path>/` | POST | Create new directory |
+| `/api/rename/<path>?newName=<name>` | POST/PATCH | Rename file or directory |
+| `/api/health` | GET | Health check |
 
 ### Examples
 
 ```bash
 # Upload a file
-curl -X POST -F "file=@photo.jpg" http://localhost:8080/upload/photos/2026/
+curl -X POST -F "file=@photo.jpg" http://localhost:8080/api/upload/photos/2026/
 
 # Delete a file
-curl -X DELETE http://localhost:8080/delete/photos/2026/photo.jpg
+curl -X DELETE http://localhost:8080/api/delete/photos/2026/photo.jpg
 
 # Create a directory
-curl -X POST http://localhost:8080/mkdir/photos/2026/
+curl -X POST http://localhost:8080/api/mkdir/photos/2026/
+
+# Rename a file
+curl -X POST "http://localhost:8080/api/rename/old.txt?newName=new.txt"
 
 # Health check
-curl http://localhost:8080/health
+curl http://localhost:8080/api/health
 ```
 
 ## Nginx Integration

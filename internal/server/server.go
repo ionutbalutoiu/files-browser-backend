@@ -31,11 +31,11 @@ func New(cfg config.Config) *Server {
 	renameHandler := handlers.NewRenameHandler(cfg)
 	healthHandler := handlers.NewHealthHandler()
 
-	mux.Handle("/upload/", uploadHandler)
-	mux.Handle("/delete/", deleteHandler)
-	mux.Handle("/mkdir/", mkdirHandler)
-	mux.Handle("/rename/", renameHandler)
-	mux.Handle("/health", healthHandler)
+	mux.Handle("/api/upload/", uploadHandler)
+	mux.Handle("/api/delete/", deleteHandler)
+	mux.Handle("/api/mkdir/", mkdirHandler)
+	mux.Handle("/api/rename/", renameHandler)
+	mux.Handle("/api/health", healthHandler)
 
 	httpServer := &http.Server{
 		Addr:         cfg.ListenAddr,

@@ -50,7 +50,7 @@ func TestRenameFileSuccess(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/rename/oldfile.txt?newName=newfile.txt", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/rename/oldfile.txt?newName=newfile.txt", nil)
 	rr := httptest.NewRecorder()
 	renameHandler.ServeHTTP(rr, req)
 
@@ -102,7 +102,7 @@ func TestRenameDirectorySuccess(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/rename/olddir?newName=newdir", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/rename/olddir?newName=newdir", nil)
 	rr := httptest.NewRecorder()
 	renameHandler.ServeHTTP(rr, req)
 
@@ -164,7 +164,7 @@ func TestRenameNestedPath(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/rename/subdir/oldfile.txt?newName=newfile.txt", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/rename/subdir/oldfile.txt?newName=newfile.txt", nil)
 	rr := httptest.NewRecorder()
 	renameHandler.ServeHTTP(rr, req)
 
@@ -198,7 +198,7 @@ func TestRenameNotFound(t *testing.T) {
 	_, renameHandler, tmpDir := setupRenameHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	req := httptest.NewRequest(http.MethodPost, "/rename/nonexistent.txt?newName=newfile.txt", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/rename/nonexistent.txt?newName=newfile.txt", nil)
 	rr := httptest.NewRecorder()
 	renameHandler.ServeHTTP(rr, req)
 
@@ -232,7 +232,7 @@ func TestRenameDestinationExists(t *testing.T) {
 		t.Fatalf("failed to create existing file: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/rename/source.txt?newName=existing.txt", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/rename/source.txt?newName=existing.txt", nil)
 	rr := httptest.NewRecorder()
 	renameHandler.ServeHTTP(rr, req)
 
@@ -269,7 +269,7 @@ func TestRenameMissingNewName(t *testing.T) {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/rename/file.txt", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/rename/file.txt", nil)
 	rr := httptest.NewRecorder()
 	renameHandler.ServeHTTP(rr, req)
 
@@ -292,10 +292,10 @@ func TestRenamePathTraversal(t *testing.T) {
 		path    string
 		newName string
 	}{
-		{"traversal in path", "/rename/../etc/passwd?newName=new.txt", ""},
-		{"traversal in newName", "/rename/file.txt?newName=../outside.txt", "../outside.txt"},
-		{"path separator in newName", "/rename/file.txt?newName=sub/file.txt", "sub/file.txt"},
-		{"absolute newName", "/rename/file.txt?newName=/etc/passwd", "/etc/passwd"},
+		{"traversal in path", "/api/rename/../etc/passwd?newName=new.txt", ""},
+		{"traversal in newName", "/api/rename/file.txt?newName=../outside.txt", "../outside.txt"},
+		{"path separator in newName", "/api/rename/file.txt?newName=sub/file.txt", "sub/file.txt"},
+		{"absolute newName", "/api/rename/file.txt?newName=/etc/passwd", "/etc/passwd"},
 	}
 
 	for _, tt := range tests {
@@ -319,7 +319,7 @@ func TestRenameMethodNotAllowed(t *testing.T) {
 
 	for _, method := range methods {
 		t.Run(method, func(t *testing.T) {
-			req := httptest.NewRequest(method, "/rename/file.txt?newName=new.txt", nil)
+			req := httptest.NewRequest(method, "/api/rename/file.txt?newName=new.txt", nil)
 			rr := httptest.NewRecorder()
 			renameHandler.ServeHTTP(rr, req)
 
@@ -341,7 +341,7 @@ func TestRenamePatchMethod(t *testing.T) {
 	}
 
 	// PATCH should work too
-	req := httptest.NewRequest(http.MethodPatch, "/rename/file.txt?newName=renamed.txt", nil)
+	req := httptest.NewRequest(http.MethodPatch, "/api/rename/file.txt?newName=renamed.txt", nil)
 	rr := httptest.NewRecorder()
 	renameHandler.ServeHTTP(rr, req)
 
@@ -365,7 +365,7 @@ func TestRenameSymlink(t *testing.T) {
 		t.Skipf("symlinks not supported: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/rename/link.txt?newName=renamed.txt", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/rename/link.txt?newName=renamed.txt", nil)
 	rr := httptest.NewRecorder()
 	renameHandler.ServeHTTP(rr, req)
 
@@ -386,7 +386,7 @@ func TestRenameEmptyPath(t *testing.T) {
 	_, renameHandler, tmpDir := setupRenameHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	req := httptest.NewRequest(http.MethodPost, "/rename/?newName=something.txt", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/rename/?newName=something.txt", nil)
 	rr := httptest.NewRecorder()
 	renameHandler.ServeHTTP(rr, req)
 
@@ -415,7 +415,7 @@ func TestRenameInvalidNewName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/rename/file.txt?newName="+tt.newName, nil)
+			req := httptest.NewRequest(http.MethodPost, "/api/rename/file.txt?newName="+tt.newName, nil)
 			rr := httptest.NewRecorder()
 			renameHandler.ServeHTTP(rr, req)
 

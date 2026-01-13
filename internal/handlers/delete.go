@@ -32,7 +32,7 @@ func (h *DeleteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract target path from URL
-	targetPath := strings.TrimPrefix(r.URL.Path, "/delete")
+	targetPath := strings.TrimPrefix(r.URL.Path, "/api/delete")
 	targetPath = strings.TrimPrefix(targetPath, "/")
 	targetPath = strings.TrimSuffix(targetPath, "/") // Normalize trailing slash
 

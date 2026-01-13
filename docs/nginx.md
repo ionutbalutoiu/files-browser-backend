@@ -45,7 +45,7 @@ location /ui/ {
 }
 
 # Upload endpoint - proxy to Go service
-location /upload/ {
+location /api/upload/ {
     # Proxy to file service
     proxy_pass http://127.0.0.1:8080;
     
@@ -68,7 +68,7 @@ location /upload/ {
 }
 
 # Delete endpoint - proxy to Go service
-location /delete/ {
+location /api/delete/ {
     # Proxy to file service
     proxy_pass http://127.0.0.1:8080;
     
@@ -80,7 +80,7 @@ location /delete/ {
 }
 
 # Mkdir endpoint - proxy to Go service
-location /mkdir/ {
+location /api/mkdir/ {
     # Proxy to file service
     proxy_pass http://127.0.0.1:8080;
     
@@ -92,7 +92,7 @@ location /mkdir/ {
 }
 
 # Health check endpoint (optional, useful for load balancers)
-location = /health {
+location = /api/health {
     proxy_pass http://127.0.0.1:8080/health;
     proxy_set_header Host $host;
 }
@@ -122,7 +122,7 @@ server {
     }
     
     # Upload API
-    location /upload/ {
+    location /api/upload/ {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -134,7 +134,7 @@ server {
     }
     
     # Delete API
-    location /delete/ {
+    location /api/delete/ {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -142,7 +142,7 @@ server {
     }
     
     # Mkdir API
-    location /mkdir/ {
+    location /api/mkdir/ {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -198,29 +198,29 @@ If Nginx's limit is lower, users will get a `413` error from Nginx before reachi
 ### 5. Trailing Slashes
 
 The upload endpoint expects a trailing slash. Configure your SPA to always include it:
-- ✅ `POST /upload/photos/2026/`
-- ❌ `POST /upload/photos/2026`
+- ✅ `POST /api/upload/photos/2026/`
+- ❌ `POST /api/upload/photos/2026`
 
 ## Testing the Integration
 
 ```bash
 # Test Nginx is proxying correctly
-curl -X POST -F "file=@test.txt" http://localhost/upload/test/
+curl -X POST -F "file=@test.txt" http://localhost/api/upload/test/
 
 # Check the file was created
 curl http://localhost/files/test/test.txt
 
 # Create a new directory
-curl -X POST http://localhost/mkdir/photos/2026/
+curl -X POST http://localhost/api/mkdir/photos/2026/
 
 # Verify directory appears in listing
 curl http://localhost/files/photos/
 
 # Delete an empty directory
-curl -X DELETE http://localhost/delete/photos/2026/
+curl -X DELETE http://localhost/api/delete/photos/2026/
 
 # Test health endpoint
-curl http://localhost/health
+curl http://localhost/api/health
 ```
 
 ## Troubleshooting

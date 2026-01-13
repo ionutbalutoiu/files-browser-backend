@@ -133,7 +133,7 @@ func TestUploadSingleFile(t *testing.T) {
 	part.Write([]byte("hello world"))
 	writer.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/upload/docs/", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/upload/docs/", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
@@ -186,7 +186,7 @@ func TestUploadMultipleFiles(t *testing.T) {
 	}
 	writer.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/upload/batch/", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/upload/batch/", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
@@ -220,7 +220,7 @@ func TestRejectOverwrite(t *testing.T) {
 	part.Write([]byte("new content"))
 	writer.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/upload/existing/", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/upload/existing/", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
@@ -260,7 +260,7 @@ func TestRejectEmptyFilename(t *testing.T) {
 	part.Write([]byte("content"))
 	writer.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/upload/test/", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/upload/test/", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
@@ -286,7 +286,7 @@ func TestRejectHiddenFiles(t *testing.T) {
 	part.Write([]byte("malicious content"))
 	writer.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/upload/test/", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/upload/test/", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
@@ -312,7 +312,7 @@ func TestMethodNotAllowed(t *testing.T) {
 	methods := []string{http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodPatch}
 
 	for _, method := range methods {
-		req := httptest.NewRequest(method, "/upload/test/", nil)
+		req := httptest.NewRequest(method, "/api/upload/test/", nil)
 		rr := httptest.NewRecorder()
 		uploadHandler.ServeHTTP(rr, req)
 
@@ -328,7 +328,7 @@ func TestInvalidContentType(t *testing.T) {
 
 	uploadHandler := handlers.NewUploadHandler(cfg)
 
-	req := httptest.NewRequest(http.MethodPost, "/upload/test/", strings.NewReader("not multipart"))
+	req := httptest.NewRequest(http.MethodPost, "/api/upload/test/", strings.NewReader("not multipart"))
 	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
@@ -362,7 +362,7 @@ func TestPartialSuccess(t *testing.T) {
 
 	writer.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/upload/partial/", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/upload/partial/", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()

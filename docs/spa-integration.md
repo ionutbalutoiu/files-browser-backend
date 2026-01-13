@@ -22,7 +22,7 @@ async function uploadFiles(files, targetPath) {
   // Ensure path has trailing slash
   const path = targetPath.replace(/\/$/, '') + '/';
   
-  const response = await fetch(`/upload/${path}`, {
+  const response = await fetch(`/api/upload/${path}`, {
     method: 'POST',
     body: formData,
     // Don't set Content-Type header - browser sets it with boundary
@@ -50,7 +50,7 @@ async function deleteFile(path) {
   // Normalize path (remove leading/trailing slashes for files)
   const normalizedPath = path.replace(/^\/+|\/+$/g, '');
   
-  const response = await fetch(`/delete/${normalizedPath}`, {
+  const response = await fetch(`/api/delete/${normalizedPath}`, {
     method: 'DELETE',
   });
   
@@ -102,7 +102,7 @@ async function createDirectory(parentPath, dirName) {
     ? `${normalizedParent}/${dirName}` 
     : dirName;
   
-  const response = await fetch(`/mkdir/${fullPath}/`, {
+  const response = await fetch(`/api/mkdir/${fullPath}/`, {
     method: 'POST',
   });
   
@@ -271,7 +271,7 @@ async function uploadFilesWithProgress(files, targetPath, onProgress) {
       reject(new Error('Network error'));
     });
     
-    xhr.open('POST', `/upload/${path}`);
+    xhr.open('POST', `/api/upload/${path}`);
     xhr.send(formData);
   });
 }
@@ -314,17 +314,17 @@ The SPA uses hash routing, and the API endpoints use path routing. The mapping i
 
 | SPA URL | Upload Endpoint | Files Location |
 | ------- | --------------- | -------------- |
-| `/ui/#/` | `POST /upload/` | `/srv/files/` |
-| `/ui/#/photos` | `POST /upload/photos/` | `/srv/files/photos/` |
-| `/ui/#/photos/2026` | `POST /upload/photos/2026/` | `/srv/files/photos/2026/` |
+| `/ui/#/` | `POST /api/upload/` | `/srv/files/` |
+| `/ui/#/photos` | `POST /api/upload/photos/` | `/srv/files/photos/` |
+| `/ui/#/photos/2026` | `POST /api/upload/photos/2026/` | `/srv/files/photos/2026/` |
 
 ### Mkdir Mapping
 
 | SPA URL | Action | Mkdir Endpoint | Result |
 | ------- | ------ | -------------- | ------ |
-| `/ui/#/` | Create "photos" | `POST /mkdir/photos/` | `/srv/files/photos/` |
-| `/ui/#/photos` | Create "2026" | `POST /mkdir/photos/2026/` | `/srv/files/photos/2026/` |
-| `/ui/#/photos/2026` | Create "vacation" | `POST /mkdir/photos/2026/vacation/` | `/srv/files/photos/2026/vacation/` |
+| `/ui/#/` | Create "photos" | `POST /api/mkdir/photos/` | `/srv/files/photos/` |
+| `/ui/#/photos` | Create "2026" | `POST /api/mkdir/photos/2026/` | `/srv/files/photos/2026/` |
+| `/ui/#/photos/2026` | Create "vacation" | `POST /api/mkdir/photos/2026/vacation/` | `/srv/files/photos/2026/vacation/` |
 
 ## Error Handling Best Practices
 

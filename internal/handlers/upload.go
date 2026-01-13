@@ -48,7 +48,7 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract target path from URL
-	targetPath := strings.TrimPrefix(r.URL.Path, "/upload")
+	targetPath := strings.TrimPrefix(r.URL.Path, "/api/upload")
 	targetPath = strings.TrimPrefix(targetPath, "/")
 
 	// Resolve and validate target directory
