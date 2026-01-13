@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"files-browser-backend/internal/pathutil"
 )
@@ -180,6 +181,84 @@ func Mkdir(targetPath string) error {
 			}
 		}
 		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	return nil
+}
+
+// SharePublic creates a symlink in publicBaseDir pointing to the source file.
+// The symlink mirrors the same relative directory structure.
+// Returns nil on success, or an error with appropriate status code.
+func SharePublic(sourceAbsPath, publicBaseDir, relPath string) error {
+	// Compute link path in public directory
+	linkPath := filepath.Join(publicBaseDir, relPath)
+	linkPath = filepath.Clean(linkPath)
+
+	// CRITICAL: Verify link path stays within publicBaseDir
+	relLink, err := filepath.Rel(publicBaseDir, linkPath)
+	if err != nil || strings.HasPrefix(relLink, "..") {
+		return &pathutil.PathError{
+			StatusCode: 400,
+			Message:    "invalid path: escapes public base directory",
+		}
+	}
+
+	// Ensure parent directories exist in public directory
+	linkDir := filepath.Dir(linkPath)
+	if err := os.MkdirAll(linkDir, 0755); err != nil {
+		if os.IsPermission(err) {
+			return &pathutil.PathError{
+				StatusCode: 403,
+				Message:    "permission denied creating public directory",
+			}
+		}
+		return fmt.Errorf("failed to create public directory structure: %w", err)
+	}
+
+	// Check if link already exists
+	info, err := os.Lstat(linkPath)
+	if err == nil {
+		// Something exists at the link path
+		if info.Mode()&os.ModeSymlink != 0 {
+			// It's a symlink - check if it points to the same target (idempotent)
+			existingTarget, err := os.Readlink(linkPath)
+			if err == nil && existingTarget == sourceAbsPath {
+				// Same target, treat as success (idempotent)
+				return nil
+			}
+			// Different target - conflict
+			return &pathutil.PathError{
+				StatusCode: 409,
+				Message:    "public share already exists with different target",
+			}
+		}
+		// Not a symlink - something else exists there
+		return &pathutil.PathError{
+			StatusCode: 409,
+			Message:    "path already exists in public directory",
+		}
+	}
+
+	if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to check link path: %w", err)
+	}
+
+	// Create symlink pointing to the absolute source path
+	if err := os.Symlink(sourceAbsPath, linkPath); err != nil {
+		if os.IsExist(err) {
+			// Race condition - try again or return conflict
+			return &pathutil.PathError{
+				StatusCode: 409,
+				Message:    "public share already exists",
+			}
+		}
+		if os.IsPermission(err) {
+			return &pathutil.PathError{
+				StatusCode: 403,
+				Message:    "permission denied creating symlink",
+			}
+		}
+		return fmt.Errorf("failed to create symlink: %w", err)
 	}
 
 	return nil

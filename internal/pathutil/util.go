@@ -454,3 +454,80 @@ func ValidateDestination(baseDir, destPath string) error {
 
 	return nil
 }
+
+// ResolveSharePublicPath validates and resolves a path for public sharing.
+// It validates the source file path and returns the resolved filesystem path.
+// SECURITY CRITICAL: Prevents path traversal, symlink escape, and ensures only regular files.
+func ResolveSharePublicPath(baseDir, urlPath string) (resolvedPath, virtualPath string, err error) {
+	// Reject empty path
+	if urlPath == "" || urlPath == "." {
+		return "", "", &PathError{
+			StatusCode: 400,
+			Message:    "file path is required",
+		}
+	}
+
+	// Clean the path to normalize . and .. components
+	cleanPath := filepath.Clean(urlPath)
+
+	// Reject paths containing .. after cleaning
+	if strings.Contains(cleanPath, "..") {
+		return "", "", &PathError{
+			StatusCode: 400,
+			Message:    "invalid path: contains parent directory reference",
+		}
+	}
+
+	// Reject absolute paths
+	if filepath.IsAbs(cleanPath) {
+		return "", "", &PathError{
+			StatusCode: 400,
+			Message:    "invalid path: absolute paths not allowed",
+		}
+	}
+
+	// Construct full target path
+	targetPath := filepath.Join(baseDir, cleanPath)
+
+	// CRITICAL: Verify the target is strictly within base directory
+	relPath, err := filepath.Rel(baseDir, targetPath)
+	if err != nil || strings.HasPrefix(relPath, "..") || relPath == "." {
+		return "", "", &PathError{
+			StatusCode: 400,
+			Message:    "invalid path: escapes base directory",
+		}
+	}
+
+	// Use Lstat to check if path exists WITHOUT following symlinks
+	info, err := os.Lstat(targetPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", "", &PathError{
+				StatusCode: 404,
+				Message:    "path does not exist",
+			}
+		}
+		return "", "", &PathError{
+			StatusCode: 500,
+			Message:    "failed to stat path",
+		}
+	}
+
+	// SECURITY: Reject symlinks
+	if info.Mode()&os.ModeSymlink != 0 {
+		return "", "", &PathError{
+			StatusCode: 400,
+			Message:    "cannot share symlinks",
+		}
+	}
+
+	// Only allow regular files
+	if !info.Mode().IsRegular() {
+		return "", "", &PathError{
+			StatusCode: 400,
+			Message:    "only regular files can be shared publicly",
+		}
+	}
+
+	return targetPath, cleanPath, nil
+}

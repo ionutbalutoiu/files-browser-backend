@@ -29,12 +29,14 @@ func New(cfg config.Config) *Server {
 	deleteHandler := handlers.NewDeleteHandler(cfg)
 	mkdirHandler := handlers.NewMkdirHandler(cfg)
 	renameHandler := handlers.NewRenameHandler(cfg)
+	sharePublicHandler := handlers.NewSharePublicHandler(cfg)
 	healthHandler := handlers.NewHealthHandler()
 
 	mux.Handle("/api/upload/", uploadHandler)
 	mux.Handle("/api/delete/", deleteHandler)
 	mux.Handle("/api/mkdir/", mkdirHandler)
 	mux.Handle("/api/rename/", renameHandler)
+	mux.Handle("/api/share-public/", sharePublicHandler)
 	mux.Handle("/api/health", healthHandler)
 
 	httpServer := &http.Server{
@@ -75,6 +77,9 @@ func (s *Server) Run() error {
 
 	log.Printf("File server starting on %s", s.config.ListenAddr)
 	log.Printf("Base directory: %s", s.config.BaseDir)
+	if s.config.PublicBaseDir != "" {
+		log.Printf("Public base directory: %s", s.config.PublicBaseDir)
+	}
 	log.Printf("Max upload size: %d bytes (%.2f GB)", s.config.MaxUploadSize, float64(s.config.MaxUploadSize)/(1024*1024*1024))
 
 	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

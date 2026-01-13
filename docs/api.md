@@ -294,6 +294,84 @@ curl -X PATCH "http://localhost:8080/api/rename/file.txt?newName=renamed.txt"
 
 ---
 
+### Share File Publicly
+
+```
+POST /api/share-public/<path>
+```
+
+Create a public share symlink for a file. The symlink is created in the public base directory with the same relative path structure.
+
+#### Prerequisites
+
+The service must be started with the `-public-base-dir` flag or `FILES_SVC_PUBLIC_BASE_DIR` environment variable set. If not configured, this endpoint returns 501 Not Implemented.
+
+#### Request
+
+- **Method:** `POST`
+- **URL Parameters:**
+  - `<path>` - Path to the file to share publicly (required)
+- **Body:** None required
+
+#### Example Requests
+
+```bash
+# Share a file in a subdirectory
+curl -X POST http://localhost:8080/api/share-public/photos/2026/pic.jpg
+
+# Share a file in the root
+curl -X POST http://localhost:8080/api/share-public/document.pdf
+```
+
+#### Example Result
+
+Given:
+- base-dir: `/srv/files`
+- public-base-dir: `/srv/public`
+- request: `POST /api/share-public/photos/2026/pic.jpg`
+
+Results in:
+- Real file: `/srv/files/photos/2026/pic.jpg`
+- Symlink created: `/srv/public/photos/2026/pic.jpg` → `/srv/files/photos/2026/pic.jpg`
+
+#### Response
+
+**Success (201 Created):**
+```json
+{
+  "shared": "photos/2026/pic.jpg"
+}
+```
+
+**Error:**
+```json
+{
+  "error": "description of the error"
+}
+```
+
+#### HTTP Status Codes
+
+| Code | Meaning |
+|------|---------|
+| 201 | Share symlink created successfully |
+| 400 | Invalid path (traversal attempt, symlink, directory, non-regular file) |
+| 403 | Permission denied |
+| 404 | File does not exist |
+| 405 | Method not allowed (only POST is accepted) |
+| 409 | Share already exists with different target, or path already exists in public directory |
+| 501 | Public sharing not enabled (public-base-dir not configured) |
+| 500 | Internal server error |
+
+#### Notes
+
+- Only regular files can be shared (directories and symlinks are rejected)
+- The operation is idempotent: sharing the same file again returns success if the symlink already points to the same target
+- Parent directories in the public base directory are created automatically
+- The symlink points to the absolute path of the source file
+
+---
+
 ### Health Check
 
 ```
