@@ -30,6 +30,7 @@ func New(cfg config.Config) *Server {
 	mkdirHandler := handlers.NewMkdirHandler(cfg)
 	renameHandler := handlers.NewRenameHandler(cfg)
 	sharePublicHandler := handlers.NewSharePublicHandler(cfg)
+	sharePublicFilesHandler := handlers.NewSharePublicFilesHandler(cfg)
 	healthHandler := handlers.NewHealthHandler()
 
 	mux.Handle("/api/upload/", uploadHandler)
@@ -37,6 +38,7 @@ func New(cfg config.Config) *Server {
 	mux.Handle("/api/mkdir/", mkdirHandler)
 	mux.Handle("/api/rename/", renameHandler)
 	mux.Handle("/api/share-public/", sharePublicHandler)
+	mux.Handle("/api/share-public-files/", sharePublicFilesHandler)
 	mux.Handle("/api/health", healthHandler)
 
 	httpServer := &http.Server{
