@@ -1,8 +1,6 @@
-// Package api provides HTTP handlers for the file service.
-package api
+package files
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -11,12 +9,13 @@ import (
 	"strings"
 
 	"files-browser-backend/internal/config"
+	"files-browser-backend/internal/httputil"
 	"files-browser-backend/internal/pathutil"
 	"files-browser-backend/internal/service"
 )
 
-// UploadResponse is the JSON response for upload requests.
-type UploadResponse struct {
+// Response is the JSON response for file upload requests.
+type Response struct {
 	Uploaded []string `json:"uploaded"`
 	Skipped  []string `json:"skipped"`
 	Errors   []string `json:"errors,omitempty"`
@@ -27,40 +26,33 @@ type UploadHandler struct {
 	Config config.Config
 }
 
-// NewUploadHandler creates a new upload handler.
+// NewUploadHandler creates a new files upload handler.
 func NewUploadHandler(cfg config.Config) *UploadHandler {
 	return &UploadHandler{Config: cfg}
 }
 
-// ServeHTTP handles POST /upload/<path>/ requests.
+// ServeHTTP handles PUT /api/files?path=<path> requests.
 func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Only allow POST method
-	if r.Method != http.MethodPost {
-		ErrorResponse(w, http.StatusMethodNotAllowed, "only POST method is allowed")
-		return
-	}
-
 	// Check Content-Type
 	contentType := r.Header.Get("Content-Type")
 	if !strings.HasPrefix(contentType, "multipart/form-data") {
-		ErrorResponse(w, http.StatusBadRequest, "Content-Type must be multipart/form-data")
+		httputil.ErrorResponse(w, http.StatusBadRequest, "Content-Type must be multipart/form-data")
 		return
 	}
 
-	// Extract target path from URL
-	targetPath := strings.TrimPrefix(r.URL.Path, "/api/upload")
-	targetPath = strings.TrimPrefix(targetPath, "/")
+	// Extract target path from query parameter (empty = root)
+	targetPath := r.URL.Query().Get("path")
 
 	// Resolve and validate target directory
 	targetDir, err := pathutil.ResolveTargetDir(h.Config.BaseDir, targetPath)
 	if err != nil {
 		var pathErr *pathutil.PathError
 		if errors.As(err, &pathErr) {
-			ErrorResponse(w, pathErr.StatusCode, pathErr.Message)
+			httputil.ErrorResponse(w, pathErr.StatusCode, pathErr.Message)
 			return
 		}
 		log.Printf("ERROR: path resolution failed: %v", err)
-		ErrorResponse(w, http.StatusInternalServerError, "internal server error")
+		httputil.ErrorResponse(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
@@ -70,14 +62,18 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Parse multipart form with a small memory buffer (32MB)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		if strings.Contains(err.Error(), "request body too large") {
-			ErrorResponse(w, http.StatusRequestEntityTooLarge, "upload size exceeds limit")
+			httputil.ErrorResponse(w, http.StatusRequestEntityTooLarge, "upload size exceeds limit")
 			return
 		}
 		log.Printf("ERROR: failed to parse multipart form: %v", err)
-		ErrorResponse(w, http.StatusBadRequest, "failed to parse multipart form")
+		httputil.ErrorResponse(w, http.StatusBadRequest, "failed to parse multipart form")
 		return
 	}
-	defer r.MultipartForm.RemoveAll()
+	defer func() {
+		if err := r.MultipartForm.RemoveAll(); err != nil {
+			log.Printf("WARN: failed to remove multipart form temp files: %v", err)
+		}
+	}()
 
 	// Process uploaded files
 	response := h.processUploads(r.MultipartForm, targetDir)
@@ -92,12 +88,12 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	JSONResponse(w, status, response)
+	httputil.JSONResponse(w, status, response)
 }
 
 // processUploads handles all files in the multipart form.
-func (h *UploadHandler) processUploads(form *multipart.Form, targetDir string) UploadResponse {
-	response := UploadResponse{
+func (h *UploadHandler) processUploads(form *multipart.Form, targetDir string) Response {
+	response := Response{
 		Uploaded: []string{},
 		Skipped:  []string{},
 		Errors:   []string{},
@@ -141,18 +137,4 @@ func (h *UploadHandler) processUploads(form *multipart.Form, targetDir string) U
 	}
 
 	return response
-}
-
-// ErrorResponse sends a JSON error response.
-func ErrorResponse(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
-}
-
-// JSONResponse sends a JSON response.
-func JSONResponse(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
 }

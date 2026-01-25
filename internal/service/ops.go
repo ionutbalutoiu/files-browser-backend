@@ -4,6 +4,7 @@ package service
 import (
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"os"
 	"path/filepath"
@@ -49,7 +50,11 @@ func SaveFile(fh *multipart.FileHeader, targetDir, baseDir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to open uploaded file: %w", err)
 	}
-	defer src.Close()
+	defer func() {
+		if err := src.Close(); err != nil {
+			log.Printf("WARN: failed to close source file: %v", err)
+		}
+	}()
 
 	// Create destination file with exclusive flag (O_EXCL prevents race condition)
 	dst, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
@@ -63,20 +68,30 @@ func SaveFile(fh *multipart.FileHeader, targetDir, baseDir string) error {
 	// Stream copy from source to destination
 	_, err = io.Copy(dst, src)
 	if err != nil {
-		dst.Close()
-		os.Remove(destPath) // Clean up partial file
+		if closeErr := dst.Close(); closeErr != nil {
+			log.Printf("WARN: failed to close destination file during cleanup: %v", closeErr)
+		}
+		if removeErr := os.Remove(destPath); removeErr != nil {
+			log.Printf("WARN: failed to remove partial file during cleanup: %v", removeErr)
+		}
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
 	// Sync to ensure data is flushed to disk
 	if err := dst.Sync(); err != nil {
-		dst.Close()
-		os.Remove(destPath)
+		if closeErr := dst.Close(); closeErr != nil {
+			log.Printf("WARN: failed to close destination file during cleanup: %v", closeErr)
+		}
+		if removeErr := os.Remove(destPath); removeErr != nil {
+			log.Printf("WARN: failed to remove file during cleanup: %v", removeErr)
+		}
 		return fmt.Errorf("failed to sync file: %w", err)
 	}
 
 	if err := dst.Close(); err != nil {
-		os.Remove(destPath)
+		if removeErr := os.Remove(destPath); removeErr != nil {
+			log.Printf("WARN: failed to remove file during cleanup: %v", removeErr)
+		}
 		return fmt.Errorf("failed to close file: %w", err)
 	}
 

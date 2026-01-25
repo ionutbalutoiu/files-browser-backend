@@ -8,9 +8,15 @@ description: Go backend rules for files-browser-backend
 ```
 cmd/files-svc/     → main(), CLI flags
 internal/
-  api/             → HTTP handlers (one per endpoint)
+  api/             → HTTP handlers (organized by resource)
+    files/         → Upload, delete handlers
+    files/actions/ → Move, rename handlers
+    folders/       → Create folder handler
+    publicshares/  → Public share handlers
+    health/        → Health check handler
   service/         → Filesystem operations
   pathutil/        → Path validation (security-critical)
+  httputil/        → Shared HTTP response helpers
   config/          → Configuration from env
   server/          → HTTP server, routing
 configs/           → Sample .env files
@@ -70,8 +76,18 @@ func (h *FooHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) { ... }
 
 ## Adding New Endpoints
 
-1. Create handler in `internal/api/foo.go`
+1. Create handler in `internal/api/<resource>/handler.go`
 2. Add service function in `internal/service/` if needed
 3. Add path validator in `internal/pathutil/` if needed
 4. Register route in `internal/server/server.go`
-5. Update API docs in `CLAUDE.md`
+5. Use `httputil.ErrorResponse`/`JSONResponse` for responses
+6. Update API docs in `docs/api.md`
+
+## Breaking Changes
+
+When making changes that break backwards compatibility (API changes, removed endpoints, changed request/response formats):
+
+1. Update `docs/api.md` with new API specification
+2. Update `CLAUDE.md` API section
+3. Update `README.md` if affected
+4. Update this file if handler patterns change

@@ -80,19 +80,19 @@ func TestDeletePublicShare_CleanupStopsAtNonEmptyDir(t *testing.T) {
 	// Create target file
 	targetDir := t.TempDir()
 	targetFile := filepath.Join(targetDir, "real-file.txt")
-	os.WriteFile(targetFile, []byte("content"), 0644)
+	_ = os.WriteFile(targetFile, []byte("content"), 0644)
 
 	// Create structure: publicDir/dir1/dir2/my-file.txt -> targetFile
 	// Also create: publicDir/dir1/dir2/other-file.txt (another file to keep dir2 non-empty)
 	nestedDir := filepath.Join(publicDir, "dir1", "dir2")
-	os.MkdirAll(nestedDir, 0755)
+	_ = os.MkdirAll(nestedDir, 0755)
 
 	linkPath := filepath.Join(nestedDir, "my-file.txt")
-	os.Symlink(targetFile, linkPath)
+	_ = os.Symlink(targetFile, linkPath)
 
 	// Create another file in dir2 to make it non-empty after symlink deletion
 	otherFile := filepath.Join(nestedDir, "other-file.txt")
-	os.WriteFile(otherFile, []byte("other"), 0644)
+	_ = os.WriteFile(otherFile, []byte("other"), 0644)
 
 	// Delete the public share
 	err := service.DeletePublicShare(publicDir, "dir1/dir2/my-file.txt")
@@ -126,7 +126,7 @@ func TestDeletePublicShare_NotASymlink(t *testing.T) {
 
 	// Create a regular file (not a symlink)
 	regularFile := filepath.Join(publicDir, "regular.txt")
-	os.WriteFile(regularFile, []byte("content"), 0644)
+	_ = os.WriteFile(regularFile, []byte("content"), 0644)
 
 	// Try to delete - should fail
 	err := service.DeletePublicShare(publicDir, "regular.txt")
@@ -158,7 +158,7 @@ func TestDeletePublicShare_DirectoryNotSymlink(t *testing.T) {
 
 	// Create a directory
 	dir := filepath.Join(publicDir, "somedir")
-	os.Mkdir(dir, 0755)
+	_ = os.Mkdir(dir, 0755)
 
 	// Try to delete - should fail
 	err := service.DeletePublicShare(publicDir, "somedir")
@@ -297,14 +297,14 @@ func TestDeletePublicShare_DeepNestedCleanup(t *testing.T) {
 	// Create target file
 	targetDir := t.TempDir()
 	targetFile := filepath.Join(targetDir, "deep-file.txt")
-	os.WriteFile(targetFile, []byte("content"), 0644)
+	_ = os.WriteFile(targetFile, []byte("content"), 0644)
 
 	// Create very deep structure
 	deepPath := filepath.Join(publicDir, "a", "b", "c", "d", "e", "f")
-	os.MkdirAll(deepPath, 0755)
+	_ = os.MkdirAll(deepPath, 0755)
 
 	linkPath := filepath.Join(deepPath, "file.txt")
-	os.Symlink(targetFile, linkPath)
+	_ = os.Symlink(targetFile, linkPath)
 
 	// Delete
 	err := service.DeletePublicShare(publicDir, "a/b/c/d/e/f/file.txt")
@@ -331,11 +331,11 @@ func TestDeletePublicShare_RootLevelSymlink(t *testing.T) {
 	// Create target file
 	targetDir := t.TempDir()
 	targetFile := filepath.Join(targetDir, "root-file.txt")
-	os.WriteFile(targetFile, []byte("content"), 0644)
+	_ = os.WriteFile(targetFile, []byte("content"), 0644)
 
 	// Create symlink directly in publicDir (no nested dirs)
 	linkPath := filepath.Join(publicDir, "my-file.txt")
-	os.Symlink(targetFile, linkPath)
+	_ = os.Symlink(targetFile, linkPath)
 
 	// Delete
 	err := service.DeletePublicShare(publicDir, "my-file.txt")

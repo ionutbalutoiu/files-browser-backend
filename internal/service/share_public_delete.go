@@ -1,6 +1,7 @@
 package service
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -176,7 +177,11 @@ func isDirEmpty(dir string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.Printf("WARN: failed to close directory handle: %v", err)
+		}
+	}()
 
 	// Read at most 1 entry
 	names, err := f.Readdirnames(1)

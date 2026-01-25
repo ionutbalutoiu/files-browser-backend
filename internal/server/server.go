@@ -23,17 +23,7 @@ type Server struct {
 // New creates a new Server with the given configuration.
 func New(cfg config.Config) *Server {
 	mux := http.NewServeMux()
-
-	// Register handlers
-	mux.Handle("POST /api/upload/{path...}", api.NewUploadHandler(cfg))
-	mux.Handle("DELETE /api/delete/{path...}", api.NewDeleteHandler(cfg))
-	mux.Handle("POST /api/mkdir/{path...}", api.NewMkdirHandler(cfg))
-	mux.Handle("POST /api/rename/{path...}", api.NewRenameHandler(cfg))
-	mux.Handle("POST /api/mv/{path...}", api.NewMoveHandler(cfg))
-	mux.Handle("POST /api/share-public/{path...}", api.NewSharePublicHandler(cfg))
-	mux.Handle("GET /api/share-public-files/{path...}", api.NewSharePublicFilesHandler(cfg))
-	mux.Handle("DELETE /api/share-public-delete", api.NewSharePublicDeleteHandler(cfg))
-	mux.Handle("GET /api/health", api.NewHealthHandler())
+	api.RegisterRoutes(mux, cfg)
 
 	httpServer := &http.Server{
 		Addr:         cfg.ListenAddr,

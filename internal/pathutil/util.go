@@ -2,6 +2,7 @@
 package pathutil
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,9 +18,32 @@ func (e *PathError) Error() string {
 	return e.Message
 }
 
+// ValidateRelativePath validates that a path is safe (no traversal, not absolute).
+func ValidateRelativePath(path string) error {
+	if path == "" {
+		return fmt.Errorf("path is required")
+	}
+	if strings.HasPrefix(path, "/") {
+		return fmt.Errorf("absolute paths not allowed")
+	}
+	if strings.Contains(path, "..") {
+		return fmt.Errorf("path traversal not allowed")
+	}
+	return nil
+}
+
 // ResolveTargetDir validates and resolves a target directory path for uploads.
 // It ensures the path is safe and within the base directory.
 func ResolveTargetDir(baseDir, urlPath string) (string, error) {
+	// Resolve symlinks in baseDir first (handles macOS /var -> /private/var)
+	realBaseDir, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return "", &PathError{
+			StatusCode: 500,
+			Message:    "base directory resolution failed",
+		}
+	}
+
 	// Clean the path to remove any . or .. components
 	cleanPath := filepath.Clean(urlPath)
 
@@ -40,7 +64,7 @@ func ResolveTargetDir(baseDir, urlPath string) (string, error) {
 	}
 
 	// Construct full target path
-	targetDir := filepath.Join(baseDir, cleanPath)
+	targetDir := filepath.Join(realBaseDir, cleanPath)
 
 	// Resolve any symlinks to get the real path
 	realTarget, err := filepath.EvalSymlinks(targetDir)
@@ -48,7 +72,7 @@ func ResolveTargetDir(baseDir, urlPath string) (string, error) {
 		// If path doesn't exist, check parent directory
 		if os.IsNotExist(err) {
 			// Verify the path would still be under base if created
-			relPath, relErr := filepath.Rel(baseDir, targetDir)
+			relPath, relErr := filepath.Rel(realBaseDir, targetDir)
 			if relErr != nil || strings.HasPrefix(relPath, "..") {
 				return "", &PathError{
 					StatusCode: 400,
@@ -64,7 +88,7 @@ func ResolveTargetDir(baseDir, urlPath string) (string, error) {
 	}
 
 	// Verify resolved path is within base directory
-	relPath, err := filepath.Rel(baseDir, realTarget)
+	relPath, err := filepath.Rel(realBaseDir, realTarget)
 	if err != nil || strings.HasPrefix(relPath, "..") {
 		return "", &PathError{
 			StatusCode: 400,

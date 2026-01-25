@@ -1,4 +1,4 @@
-package api_test
+package files_test
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"files-browser-backend/internal/api"
+	"files-browser-backend/internal/api/files"
 	"files-browser-backend/internal/config"
 	"files-browser-backend/internal/pathutil"
 )
@@ -37,7 +37,7 @@ func setupTestHandler(t *testing.T) (config.Config, string) {
 
 func TestPathResolution(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	tests := []struct {
 		name      string
@@ -89,7 +89,7 @@ func TestPathResolution(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.setupPath != "" {
-				os.MkdirAll(filepath.Join(tmpDir, tt.setupPath), 0755)
+				_ = os.MkdirAll(filepath.Join(tmpDir, tt.setupPath), 0755)
 			}
 
 			_, err := pathutil.ResolveTargetDir(cfg.BaseDir, tt.path)
@@ -118,9 +118,9 @@ func TestPathResolution(t *testing.T) {
 
 func TestUploadSingleFile(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	uploadHandler := api.NewUploadHandler(cfg)
+	handler := files.NewUploadHandler(cfg)
 
 	// Create multipart form
 	body := &bytes.Buffer{}
@@ -130,20 +130,20 @@ func TestUploadSingleFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	part.Write([]byte("hello world"))
-	writer.Close()
+	_, _ = part.Write([]byte("hello world"))
+	_ = writer.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/upload/docs/", body)
+	req := httptest.NewRequest(http.MethodPut, "/api/files?path=docs", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
-	uploadHandler.ServeHTTP(rr, req)
+	handler.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusCreated {
 		t.Errorf("expected status 201, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	var resp api.UploadResponse
+	var resp files.Response
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -164,14 +164,14 @@ func TestUploadSingleFile(t *testing.T) {
 
 func TestUploadMultipleFiles(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	uploadHandler := api.NewUploadHandler(cfg)
+	handler := files.NewUploadHandler(cfg)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	files := []struct {
+	testFiles := []struct {
 		name    string
 		content string
 	}{
@@ -180,24 +180,24 @@ func TestUploadMultipleFiles(t *testing.T) {
 		{"file3.txt", "content3"},
 	}
 
-	for _, f := range files {
+	for _, f := range testFiles {
 		part, _ := writer.CreateFormFile("files", f.name)
-		part.Write([]byte(f.content))
+		_, _ = part.Write([]byte(f.content))
 	}
-	writer.Close()
+	_ = writer.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/upload/batch/", body)
+	req := httptest.NewRequest(http.MethodPut, "/api/files?path=batch", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
-	uploadHandler.ServeHTTP(rr, req)
+	handler.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusCreated {
 		t.Errorf("expected status 201, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	var resp api.UploadResponse
-	json.NewDecoder(rr.Body).Decode(&resp)
+	var resp files.Response
+	_ = json.NewDecoder(rr.Body).Decode(&resp)
 
 	if len(resp.Uploaded) != 3 {
 		t.Errorf("expected 3 uploaded files, got %d", len(resp.Uploaded))
@@ -206,32 +206,32 @@ func TestUploadMultipleFiles(t *testing.T) {
 
 func TestRejectOverwrite(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	uploadHandler := api.NewUploadHandler(cfg)
+	handler := files.NewUploadHandler(cfg)
 
 	// Create existing file
-	os.MkdirAll(filepath.Join(tmpDir, "existing"), 0755)
-	os.WriteFile(filepath.Join(tmpDir, "existing", "file.txt"), []byte("original"), 0644)
+	_ = os.MkdirAll(filepath.Join(tmpDir, "existing"), 0755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "existing", "file.txt"), []byte("original"), 0644)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	part, _ := writer.CreateFormFile("file", "file.txt")
-	part.Write([]byte("new content"))
-	writer.Close()
+	_, _ = part.Write([]byte("new content"))
+	_ = writer.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/upload/existing/", body)
+	req := httptest.NewRequest(http.MethodPut, "/api/files?path=existing", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
-	uploadHandler.ServeHTTP(rr, req)
+	handler.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusConflict {
 		t.Errorf("expected status 409, got %d", rr.Code)
 	}
 
-	var resp api.UploadResponse
-	json.NewDecoder(rr.Body).Decode(&resp)
+	var resp files.Response
+	_ = json.NewDecoder(rr.Body).Decode(&resp)
 
 	if len(resp.Skipped) != 1 {
 		t.Errorf("expected 1 skipped file, got %d", len(resp.Skipped))
@@ -246,9 +246,9 @@ func TestRejectOverwrite(t *testing.T) {
 
 func TestRejectEmptyFilename(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	uploadHandler := api.NewUploadHandler(cfg)
+	handler := files.NewUploadHandler(cfg)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -257,17 +257,17 @@ func TestRejectEmptyFilename(t *testing.T) {
 	h.Set("Content-Disposition", `form-data; name="file"; filename=""`)
 	h.Set("Content-Type", "application/octet-stream")
 	part, _ := writer.CreatePart(h)
-	part.Write([]byte("content"))
-	writer.Close()
+	_, _ = part.Write([]byte("content"))
+	_ = writer.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/upload/test/", body)
+	req := httptest.NewRequest(http.MethodPut, "/api/files?path=test", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
-	uploadHandler.ServeHTTP(rr, req)
+	handler.ServeHTTP(rr, req)
 
-	var resp api.UploadResponse
-	json.NewDecoder(rr.Body).Decode(&resp)
+	var resp files.Response
+	_ = json.NewDecoder(rr.Body).Decode(&resp)
 
 	if len(resp.Uploaded) > 0 {
 		t.Error("empty filename should be rejected")
@@ -276,24 +276,24 @@ func TestRejectEmptyFilename(t *testing.T) {
 
 func TestRejectHiddenFiles(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	uploadHandler := api.NewUploadHandler(cfg)
+	handler := files.NewUploadHandler(cfg)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	part, _ := writer.CreateFormFile("file", ".htaccess")
-	part.Write([]byte("malicious content"))
-	writer.Close()
+	_, _ = part.Write([]byte("malicious content"))
+	_ = writer.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/upload/test/", body)
+	req := httptest.NewRequest(http.MethodPut, "/api/files?path=test", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
-	uploadHandler.ServeHTTP(rr, req)
+	handler.ServeHTTP(rr, req)
 
-	var resp api.UploadResponse
-	json.NewDecoder(rr.Body).Decode(&resp)
+	var resp files.Response
+	_ = json.NewDecoder(rr.Body).Decode(&resp)
 
 	if len(resp.Uploaded) > 0 {
 		t.Error("hidden files should be rejected")
@@ -303,36 +303,17 @@ func TestRejectHiddenFiles(t *testing.T) {
 	}
 }
 
-func TestMethodNotAllowed(t *testing.T) {
-	cfg, tmpDir := setupTestHandler(t)
-	defer os.RemoveAll(tmpDir)
-
-	uploadHandler := api.NewUploadHandler(cfg)
-
-	methods := []string{http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodPatch}
-
-	for _, method := range methods {
-		req := httptest.NewRequest(method, "/api/upload/test/", nil)
-		rr := httptest.NewRecorder()
-		uploadHandler.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusMethodNotAllowed {
-			t.Errorf("%s: expected 405, got %d", method, rr.Code)
-		}
-	}
-}
-
 func TestInvalidContentType(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	uploadHandler := api.NewUploadHandler(cfg)
+	handler := files.NewUploadHandler(cfg)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/upload/test/", strings.NewReader("not multipart"))
+	req := httptest.NewRequest(http.MethodPut, "/api/files?path=test", strings.NewReader("not multipart"))
 	req.Header.Set("Content-Type", "application/json")
 
 	rr := httptest.NewRecorder()
-	uploadHandler.ServeHTTP(rr, req)
+	handler.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", rr.Code)
@@ -341,45 +322,74 @@ func TestInvalidContentType(t *testing.T) {
 
 func TestPartialSuccess(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	uploadHandler := api.NewUploadHandler(cfg)
+	handler := files.NewUploadHandler(cfg)
 
 	// Create one existing file
-	os.MkdirAll(filepath.Join(tmpDir, "partial"), 0755)
-	os.WriteFile(filepath.Join(tmpDir, "partial", "existing.txt"), []byte("original"), 0644)
+	_ = os.MkdirAll(filepath.Join(tmpDir, "partial"), 0755)
+	_ = os.WriteFile(filepath.Join(tmpDir, "partial", "existing.txt"), []byte("original"), 0644)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
 	// New file - should succeed
 	part1, _ := writer.CreateFormFile("file", "new.txt")
-	part1.Write([]byte("new content"))
+	_, _ = part1.Write([]byte("new content"))
 
 	// Existing file - should be skipped
 	part2, _ := writer.CreateFormFile("file", "existing.txt")
-	part2.Write([]byte("overwrite attempt"))
+	_, _ = part2.Write([]byte("overwrite attempt"))
 
-	writer.Close()
+	_ = writer.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/upload/partial/", body)
+	req := httptest.NewRequest(http.MethodPut, "/api/files?path=partial", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
-	uploadHandler.ServeHTTP(rr, req)
+	handler.ServeHTTP(rr, req)
 
 	// Should return 201 because at least one file was uploaded
 	if rr.Code != http.StatusCreated {
 		t.Errorf("expected 201, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	var resp api.UploadResponse
-	json.NewDecoder(rr.Body).Decode(&resp)
+	var resp files.Response
+	_ = json.NewDecoder(rr.Body).Decode(&resp)
 
 	if len(resp.Uploaded) != 1 || resp.Uploaded[0] != "new.txt" {
 		t.Errorf("unexpected uploaded: %v", resp.Uploaded)
 	}
 	if len(resp.Skipped) != 1 || resp.Skipped[0] != "existing.txt" {
 		t.Errorf("unexpected skipped: %v", resp.Skipped)
+	}
+}
+
+func TestUploadToRoot(t *testing.T) {
+	cfg, tmpDir := setupTestHandler(t)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	handler := files.NewUploadHandler(cfg)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "root-file.txt")
+	_, _ = part.Write([]byte("content"))
+	_ = writer.Close()
+
+	// Empty path = root
+	req := httptest.NewRequest(http.MethodPut, "/api/files", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Errorf("expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// Verify file exists at root
+	if _, err := os.Stat(filepath.Join(tmpDir, "root-file.txt")); err != nil {
+		t.Errorf("file should exist at root: %v", err)
 	}
 }

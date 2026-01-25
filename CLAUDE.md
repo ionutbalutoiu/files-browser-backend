@@ -19,18 +19,24 @@ go test -v ./internal/api/ -run TestUpload  # Single test
 ## Architecture
 
 ```text
-cmd/files-svc/     → Entry point, CLI flags
-internal/config/   → Configuration
-internal/server/   → HTTP server, routes
-internal/api/      → Request handlers (one per endpoint)
-internal/service/  → Filesystem ops (SaveFile, Delete, Mkdir, SharePublic)
-internal/pathutil/ → Path validation (security-critical)
-configs/           → Sample configuration files
+cmd/files-svc/          → Entry point, CLI flags
+internal/config/        → Configuration
+internal/server/        → HTTP server, routes
+internal/api/           → Request handlers
+  files/                → Upload, delete handlers
+  files/actions/        → Move, rename handlers
+  folders/              → Create folder handler
+  publicshares/         → Public share handlers
+  health/               → Health check handler
+internal/service/       → Filesystem ops (SaveFile, Delete, Mkdir, SharePublic)
+internal/pathutil/      → Path validation (security-critical)
+internal/httputil/      → HTTP response helpers (ErrorResponse, JSONResponse)
+configs/                → Sample configuration files
 ```
 
 **Handler pattern:** Structs with `Config` field implementing `http.Handler`.
 
-**Path validators** in `pathutil/util.go`: `ResolveTargetDir`, `ResolveDeletePath`, `ResolveMkdirPath`, `ResolveRenamePaths`, `ResolveSharePublicPath`.
+**Path validators** in `pathutil/util.go`: `ResolveTargetDir`, `ResolveDeletePath`, `ResolveMkdirPath`, `ResolveMovePaths`, `ResolveSharePublicPath`, `ValidateRelativePath`.
 
 **Errors:** `PathError` (with HTTP status), `FileError` (with conflict flag). Use `errors.As()`.
 
@@ -44,11 +50,14 @@ configs/           → Sample configuration files
 
 ## API
 
-- `/api/upload/<path>` POST
-- `/api/delete/<path>` DELETE
-- `/api/mkdir/<path>` POST
-- `/api/rename/<path>?newName=` POST|PATCH
-- `/api/share-public/<path>` POST
-- `/api/share-public-files/<path>` GET
-- `/api/share-public-delete` DELETE
-- `/api/health` GET
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/healthz` | Health check |
+| PUT | `/api/files?path=` | Upload files |
+| POST | `/api/folders` | Create directory |
+| DELETE | `/api/files?path=` | Delete file/folder |
+| POST | `/api/files/move` | Move item |
+| POST | `/api/files/rename` | Rename item |
+| GET | `/api/public-shares` | List public shares |
+| POST | `/api/public-shares` | Create public share |
+| DELETE | `/api/public-shares?path=` | Delete public share |
