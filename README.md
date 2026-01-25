@@ -75,7 +75,7 @@ go build -ldflags="-s -w" -o files-svc ./cmd/files-svc
   -max-upload-size 104857600
 
 # Using environment variables
-FILES_SVC_UPLOAD_BASE_DIR=/var/www/files ./files-svc
+FILES_SVC_BASE_DIR=/var/www/files ./files-svc
 FILES_SVC_MAX_UPLOAD_SIZE=104857600 ./files-svc
 
 # Show help
@@ -87,7 +87,7 @@ FILES_SVC_MAX_UPLOAD_SIZE=104857600 ./files-svc
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-listen` | `:8080` | Address and port to listen on |
-| `-base-dir` | `/srv/files` | Base directory for file storage (env: `FILES_SVC_UPLOAD_BASE_DIR`) |
+| `-base-dir` | `/srv/files` | Base directory for file storage (env: `FILES_SVC_BASE_DIR`) |
 | `-max-upload-size` | `2147483648` (2GB) | Maximum upload size in bytes (env: `FILES_SVC_MAX_UPLOAD_SIZE`) |
 
 ## API Endpoints

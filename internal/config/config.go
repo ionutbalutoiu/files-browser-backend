@@ -17,13 +17,13 @@ type Config struct {
 }
 
 // DefaultConfig returns a Config with default values.
-// BaseDir is read from FILES_SVC_UPLOAD_BASE_DIR environment variable,
+// BaseDir is read from FILES_SVC_BASE_DIR environment variable,
 // falling back to /srv/files if not set.
 // PublicBaseDir is read from FILES_SVC_PUBLIC_BASE_DIR environment variable.
 // MaxUploadSize is read from FILES_SVC_MAX_UPLOAD_SIZE environment variable,
 // falling back to 2GB if not set.
 func DefaultConfig() Config {
-	baseDir := os.Getenv("FILES_SVC_UPLOAD_BASE_DIR")
+	baseDir := os.Getenv("FILES_SVC_BASE_DIR")
 	if baseDir == "" {
 		baseDir = "/srv/files"
 	}
