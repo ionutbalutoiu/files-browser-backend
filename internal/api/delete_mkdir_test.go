@@ -1,4 +1,4 @@
-package handlers_test
+package api_test
 
 import (
 	"encoding/json"
@@ -8,15 +8,15 @@ import (
 	"path/filepath"
 	"testing"
 
+	"files-browser-backend/internal/api"
 	"files-browser-backend/internal/config"
-	"files-browser-backend/internal/handlers"
 )
 
 func TestDeleteFile(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	deleteHandler := handlers.NewDeleteHandler(cfg)
+	deleteHandler := api.NewDeleteHandler(cfg)
 
 	// Create a file to delete
 	os.MkdirAll(filepath.Join(tmpDir, "docs"), 0755)
@@ -40,7 +40,7 @@ func TestDeleteEmptyDirectory(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	deleteHandler := handlers.NewDeleteHandler(cfg)
+	deleteHandler := api.NewDeleteHandler(cfg)
 
 	// Create an empty directory
 	os.MkdirAll(filepath.Join(tmpDir, "empty-dir"), 0755)
@@ -63,7 +63,7 @@ func TestDeleteNonEmptyDirectory(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	deleteHandler := handlers.NewDeleteHandler(cfg)
+	deleteHandler := api.NewDeleteHandler(cfg)
 
 	// Create directory with a file
 	os.MkdirAll(filepath.Join(tmpDir, "non-empty"), 0755)
@@ -87,7 +87,7 @@ func TestDeleteNonExistent(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	deleteHandler := handlers.NewDeleteHandler(cfg)
+	deleteHandler := api.NewDeleteHandler(cfg)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/delete/does-not-exist.txt", nil)
 	rr := httptest.NewRecorder()
@@ -102,7 +102,7 @@ func TestDeleteBaseDirectory(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	deleteHandler := handlers.NewDeleteHandler(cfg)
+	deleteHandler := api.NewDeleteHandler(cfg)
 
 	// Try to delete base directory with empty path
 	req := httptest.NewRequest(http.MethodDelete, "/api/delete/", nil)
@@ -118,7 +118,7 @@ func TestDeletePathTraversal(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	deleteHandler := handlers.NewDeleteHandler(cfg)
+	deleteHandler := api.NewDeleteHandler(cfg)
 
 	tests := []struct {
 		name string
@@ -146,7 +146,7 @@ func TestDeleteSymlink(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	deleteHandler := handlers.NewDeleteHandler(cfg)
+	deleteHandler := api.NewDeleteHandler(cfg)
 
 	// Create a real file and a symlink to it
 	realFile := filepath.Join(tmpDir, "real.txt")
@@ -176,7 +176,7 @@ func TestDeleteMethodNotAllowed(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	deleteHandler := handlers.NewDeleteHandler(cfg)
+	deleteHandler := api.NewDeleteHandler(cfg)
 
 	methods := []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch}
 
@@ -195,7 +195,7 @@ func TestDeleteAbsolutePath(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	deleteHandler := handlers.NewDeleteHandler(cfg)
+	deleteHandler := api.NewDeleteHandler(cfg)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/delete//etc/passwd", nil)
 	rr := httptest.NewRecorder()
@@ -215,9 +215,9 @@ type MkdirTestResponse struct {
 	Created string `json:"created"`
 }
 
-func setupMkdirHandler(t *testing.T) (config.Config, *handlers.MkdirHandler, string) {
+func setupMkdirHandler(t *testing.T) (config.Config, *api.MkdirHandler, string) {
 	cfg, tmpDir := setupTestHandler(t)
-	return cfg, handlers.NewMkdirHandler(cfg), tmpDir
+	return cfg, api.NewMkdirHandler(cfg), tmpDir
 }
 
 func TestMkdirSimple(t *testing.T) {

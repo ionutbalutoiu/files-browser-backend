@@ -1,4 +1,4 @@
-package handlers_test
+package api_test
 
 import (
 	"encoding/json"
@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"files-browser-backend/internal/api"
 	"files-browser-backend/internal/config"
-	"files-browser-backend/internal/handlers"
 )
 
 // RenameTestResponse matches the JSON response structure
@@ -24,7 +24,7 @@ type ErrorTestResponse struct {
 	Error string `json:"error"`
 }
 
-func setupRenameHandler(t *testing.T) (config.Config, *handlers.RenameHandler, string) {
+func setupRenameHandler(t *testing.T) (config.Config, *api.RenameHandler, string) {
 	t.Helper()
 	tmpDir, err := os.MkdirTemp("", "rename-test-*")
 	if err != nil {
@@ -37,7 +37,7 @@ func setupRenameHandler(t *testing.T) (config.Config, *handlers.RenameHandler, s
 		MaxUploadSize: 10 * 1024 * 1024,
 	}
 
-	return cfg, handlers.NewRenameHandler(cfg), tmpDir
+	return cfg, api.NewRenameHandler(cfg), tmpDir
 }
 
 func TestRenameFileSuccess(t *testing.T) {

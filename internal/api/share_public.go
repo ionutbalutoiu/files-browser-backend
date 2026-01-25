@@ -1,4 +1,4 @@
-package handlers
+package api
 
 import (
 	"errors"
@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"files-browser-backend/internal/config"
-	"files-browser-backend/internal/fs"
 	"files-browser-backend/internal/pathutil"
+	"files-browser-backend/internal/service"
 )
 
 // SharePublicResponse is the JSON response for share-public requests.
@@ -67,7 +67,7 @@ func (h *SharePublicHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create the public share symlink
-	if err := fs.SharePublic(resolvedPath, h.Config.PublicBaseDir, virtualPath); err != nil {
+	if err := service.SharePublic(resolvedPath, h.Config.PublicBaseDir, virtualPath); err != nil {
 		var pathErr *pathutil.PathError
 		if errors.As(err, &pathErr) {
 			ErrorResponse(w, pathErr.StatusCode, pathErr.Message)

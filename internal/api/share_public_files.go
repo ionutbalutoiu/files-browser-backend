@@ -1,4 +1,4 @@
-package handlers
+package api
 
 import (
 	"encoding/json"
@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"files-browser-backend/internal/config"
-	"files-browser-backend/internal/fs"
+	"files-browser-backend/internal/service"
 )
 
 // SharePublicFilesHandler handles requests to list publicly shared files.
@@ -35,7 +35,7 @@ func (h *SharePublicFilesHandler) ServeHTTP(w http.ResponseWriter, r *http.Reque
 	}
 
 	// List all publicly shared files
-	files, err := fs.ListSharePublicFiles(h.Config.PublicBaseDir)
+	files, err := service.ListSharePublicFiles(h.Config.PublicBaseDir)
 	if err != nil {
 		log.Printf("ERROR: failed to list public shared files: %v", err)
 		ErrorResponse(w, http.StatusInternalServerError, "failed to list public shared files")

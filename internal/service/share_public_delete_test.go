@@ -1,12 +1,12 @@
-package fs_test
+package service_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
-	"files-browser-backend/internal/fs"
 	"files-browser-backend/internal/pathutil"
+	"files-browser-backend/internal/service"
 )
 
 func TestDeletePublicShare_SuccessWithNestedCleanup(t *testing.T) {
@@ -42,7 +42,7 @@ func TestDeletePublicShare_SuccessWithNestedCleanup(t *testing.T) {
 	}
 
 	// Delete the public share
-	err = fs.DeletePublicShare(publicDir, "dir1/dir2/dir3/my-file.txt")
+	err = service.DeletePublicShare(publicDir, "dir1/dir2/dir3/my-file.txt")
 	if err != nil {
 		t.Fatalf("DeletePublicShare failed: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestDeletePublicShare_CleanupStopsAtNonEmptyDir(t *testing.T) {
 	os.WriteFile(otherFile, []byte("other"), 0644)
 
 	// Delete the public share
-	err := fs.DeletePublicShare(publicDir, "dir1/dir2/my-file.txt")
+	err := service.DeletePublicShare(publicDir, "dir1/dir2/my-file.txt")
 	if err != nil {
 		t.Fatalf("DeletePublicShare failed: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestDeletePublicShare_NotASymlink(t *testing.T) {
 	os.WriteFile(regularFile, []byte("content"), 0644)
 
 	// Try to delete - should fail
-	err := fs.DeletePublicShare(publicDir, "regular.txt")
+	err := service.DeletePublicShare(publicDir, "regular.txt")
 	if err == nil {
 		t.Fatal("expected error when deleting regular file")
 	}
@@ -161,7 +161,7 @@ func TestDeletePublicShare_DirectoryNotSymlink(t *testing.T) {
 	os.Mkdir(dir, 0755)
 
 	// Try to delete - should fail
-	err := fs.DeletePublicShare(publicDir, "somedir")
+	err := service.DeletePublicShare(publicDir, "somedir")
 	if err == nil {
 		t.Fatal("expected error when deleting directory")
 	}
@@ -188,7 +188,7 @@ func TestDeletePublicShare_DirectoryNotSymlink(t *testing.T) {
 func TestDeletePublicShare_NotFound(t *testing.T) {
 	publicDir := t.TempDir()
 
-	err := fs.DeletePublicShare(publicDir, "nonexistent.txt")
+	err := service.DeletePublicShare(publicDir, "nonexistent.txt")
 	if err == nil {
 		t.Fatal("expected error for non-existent path")
 	}
@@ -217,7 +217,7 @@ func TestDeletePublicShare_PathTraversal(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := fs.DeletePublicShare(publicDir, tc.path)
+			err := service.DeletePublicShare(publicDir, tc.path)
 			if err == nil {
 				t.Fatal("expected error for path traversal")
 			}
@@ -237,7 +237,7 @@ func TestDeletePublicShare_PathTraversal(t *testing.T) {
 func TestDeletePublicShare_EmptyPath(t *testing.T) {
 	publicDir := t.TempDir()
 
-	err := fs.DeletePublicShare(publicDir, "")
+	err := service.DeletePublicShare(publicDir, "")
 	if err == nil {
 		t.Fatal("expected error for empty path")
 	}
@@ -253,7 +253,7 @@ func TestDeletePublicShare_EmptyPath(t *testing.T) {
 }
 
 func TestDeletePublicShare_EmptyPublicBaseDir(t *testing.T) {
-	err := fs.DeletePublicShare("", "some/path.txt")
+	err := service.DeletePublicShare("", "some/path.txt")
 	if err == nil {
 		t.Fatal("expected error for empty public base dir")
 	}
@@ -276,7 +276,7 @@ func TestDeletePublicShare_DotPath(t *testing.T) {
 	publicDir := t.TempDir()
 
 	// Try to delete with "." path (would delete base directory)
-	err := fs.DeletePublicShare(publicDir, ".")
+	err := service.DeletePublicShare(publicDir, ".")
 	if err == nil {
 		t.Fatal("expected error for '.' path")
 	}
@@ -307,7 +307,7 @@ func TestDeletePublicShare_DeepNestedCleanup(t *testing.T) {
 	os.Symlink(targetFile, linkPath)
 
 	// Delete
-	err := fs.DeletePublicShare(publicDir, "a/b/c/d/e/f/file.txt")
+	err := service.DeletePublicShare(publicDir, "a/b/c/d/e/f/file.txt")
 	if err != nil {
 		t.Fatalf("DeletePublicShare failed: %v", err)
 	}
@@ -338,7 +338,7 @@ func TestDeletePublicShare_RootLevelSymlink(t *testing.T) {
 	os.Symlink(targetFile, linkPath)
 
 	// Delete
-	err := fs.DeletePublicShare(publicDir, "my-file.txt")
+	err := service.DeletePublicShare(publicDir, "my-file.txt")
 	if err != nil {
 		t.Fatalf("DeletePublicShare failed: %v", err)
 	}

@@ -1,4 +1,4 @@
-package handlers_test
+package api_test
 
 import (
 	"encoding/json"
@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"files-browser-backend/internal/api"
 	"files-browser-backend/internal/config"
-	"files-browser-backend/internal/handlers"
 )
 
 // setupTestHandlerWithPublic creates a test configuration with both base and public directories.
@@ -41,7 +41,7 @@ func TestSharePublicFile(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	defer os.RemoveAll(publicDir)
 
-	handler := handlers.NewSharePublicHandler(cfg)
+	handler := api.NewSharePublicHandler(cfg)
 
 	// Create a file to share
 	os.MkdirAll(filepath.Join(tmpDir, "photos", "2026"), 0755)
@@ -57,7 +57,7 @@ func TestSharePublicFile(t *testing.T) {
 	}
 
 	// Check response
-	var resp handlers.SharePublicResponse
+	var resp api.SharePublicResponse
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to parse response: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestSharePublicIdempotent(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	defer os.RemoveAll(publicDir)
 
-	handler := handlers.NewSharePublicHandler(cfg)
+	handler := api.NewSharePublicHandler(cfg)
 
 	// Create a file
 	testFile := filepath.Join(tmpDir, "doc.txt")
@@ -120,7 +120,7 @@ func TestSharePublicDirectory(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	defer os.RemoveAll(publicDir)
 
-	handler := handlers.NewSharePublicHandler(cfg)
+	handler := api.NewSharePublicHandler(cfg)
 
 	// Create a directory
 	os.MkdirAll(filepath.Join(tmpDir, "mydir"), 0755)
@@ -146,7 +146,7 @@ func TestSharePublicNonExistent(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	defer os.RemoveAll(publicDir)
 
-	handler := handlers.NewSharePublicHandler(cfg)
+	handler := api.NewSharePublicHandler(cfg)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/share-public/does-not-exist.txt", nil)
 	rr := httptest.NewRecorder()
@@ -162,7 +162,7 @@ func TestSharePublicPathTraversal(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	defer os.RemoveAll(publicDir)
 
-	handler := handlers.NewSharePublicHandler(cfg)
+	handler := api.NewSharePublicHandler(cfg)
 
 	tests := []struct {
 		name string
@@ -190,7 +190,7 @@ func TestSharePublicSymlink(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	defer os.RemoveAll(publicDir)
 
-	handler := handlers.NewSharePublicHandler(cfg)
+	handler := api.NewSharePublicHandler(cfg)
 
 	// Create a regular file and a symlink to it
 	realFile := filepath.Join(tmpDir, "real.txt")
@@ -218,7 +218,7 @@ func TestSharePublicMethodNotAllowed(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	defer os.RemoveAll(publicDir)
 
-	handler := handlers.NewSharePublicHandler(cfg)
+	handler := api.NewSharePublicHandler(cfg)
 
 	methods := []string{http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodPatch}
 
@@ -250,7 +250,7 @@ func TestSharePublicNotEnabled(t *testing.T) {
 		MaxUploadSize: 10 * 1024 * 1024,
 	}
 
-	handler := handlers.NewSharePublicHandler(cfg)
+	handler := api.NewSharePublicHandler(cfg)
 
 	// Create a file
 	testFile := filepath.Join(tmpDir, "file.txt")
@@ -276,7 +276,7 @@ func TestSharePublicEmptyPath(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	defer os.RemoveAll(publicDir)
 
-	handler := handlers.NewSharePublicHandler(cfg)
+	handler := api.NewSharePublicHandler(cfg)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/share-public/", nil)
 	rr := httptest.NewRecorder()

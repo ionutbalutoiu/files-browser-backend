@@ -1,5 +1,5 @@
-// Package fs provides filesystem operations for file upload, deletion, and directory creation.
-package fs
+// Package service provides filesystem operations for file upload, deletion, and directory creation.
+package service
 
 import (
 	"fmt"

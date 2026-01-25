@@ -1,5 +1,5 @@
-// Package handlers provides HTTP handlers for the file service.
-package handlers
+// Package api provides HTTP handlers for the file service.
+package api
 
 import (
 	"encoding/json"
@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"files-browser-backend/internal/config"
-	"files-browser-backend/internal/fs"
 	"files-browser-backend/internal/pathutil"
+	"files-browser-backend/internal/service"
 )
 
 // UploadResponse is the JSON response for upload requests.
@@ -104,7 +104,7 @@ func (h *UploadHandler) processUploads(form *multipart.Form, targetDir string) U
 	}
 
 	// Ensure target directory exists
-	if err := fs.EnsureDir(targetDir); err != nil {
+	if err := service.EnsureDir(targetDir); err != nil {
 		log.Printf("ERROR: failed to create target directory %s: %v", targetDir, err)
 		response.Errors = append(response.Errors, "failed to create target directory")
 		return response
@@ -113,9 +113,9 @@ func (h *UploadHandler) processUploads(form *multipart.Form, targetDir string) U
 	// Process all file fields
 	for fieldName, files := range form.File {
 		for _, fileHeader := range files {
-			err := fs.SaveFile(fileHeader, targetDir, h.Config.BaseDir)
+			err := service.SaveFile(fileHeader, targetDir, h.Config.BaseDir)
 			if err != nil {
-				var fileErr *fs.FileError
+				var fileErr *service.FileError
 				if errors.As(err, &fileErr) {
 					if fileErr.IsConflict {
 						response.Skipped = append(response.Skipped, fileHeader.Filename)

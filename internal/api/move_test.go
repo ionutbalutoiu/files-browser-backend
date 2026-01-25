@@ -1,4 +1,4 @@
-package handlers_test
+package api_test
 
 import (
 	"encoding/json"
@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"files-browser-backend/internal/api"
 	"files-browser-backend/internal/config"
-	"files-browser-backend/internal/handlers"
 )
 
 // MoveTestResponse matches the JSON response structure
@@ -19,7 +19,7 @@ type MoveTestResponse struct {
 	Success bool   `json:"success"`
 }
 
-func setupMoveHandler(t *testing.T) (config.Config, *handlers.MoveHandler, string) {
+func setupMoveHandler(t *testing.T) (config.Config, *api.MoveHandler, string) {
 	t.Helper()
 	tmpDir, err := os.MkdirTemp("", "move-test-*")
 	if err != nil {
@@ -32,7 +32,7 @@ func setupMoveHandler(t *testing.T) (config.Config, *handlers.MoveHandler, strin
 		MaxUploadSize: 10 * 1024 * 1024,
 	}
 
-	return cfg, handlers.NewMoveHandler(cfg), tmpDir
+	return cfg, api.NewMoveHandler(cfg), tmpDir
 }
 
 func TestMoveFileSuccess(t *testing.T) {

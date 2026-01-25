@@ -1,4 +1,4 @@
-package handlers_test
+package api_test
 
 import (
 	"bytes"
@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"files-browser-backend/internal/api"
 	"files-browser-backend/internal/config"
-	"files-browser-backend/internal/handlers"
 	"files-browser-backend/internal/pathutil"
 )
 
@@ -120,7 +120,7 @@ func TestUploadSingleFile(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	uploadHandler := handlers.NewUploadHandler(cfg)
+	uploadHandler := api.NewUploadHandler(cfg)
 
 	// Create multipart form
 	body := &bytes.Buffer{}
@@ -143,7 +143,7 @@ func TestUploadSingleFile(t *testing.T) {
 		t.Errorf("expected status 201, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	var resp handlers.UploadResponse
+	var resp api.UploadResponse
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestUploadMultipleFiles(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	uploadHandler := handlers.NewUploadHandler(cfg)
+	uploadHandler := api.NewUploadHandler(cfg)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -196,7 +196,7 @@ func TestUploadMultipleFiles(t *testing.T) {
 		t.Errorf("expected status 201, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	var resp handlers.UploadResponse
+	var resp api.UploadResponse
 	json.NewDecoder(rr.Body).Decode(&resp)
 
 	if len(resp.Uploaded) != 3 {
@@ -208,7 +208,7 @@ func TestRejectOverwrite(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	uploadHandler := handlers.NewUploadHandler(cfg)
+	uploadHandler := api.NewUploadHandler(cfg)
 
 	// Create existing file
 	os.MkdirAll(filepath.Join(tmpDir, "existing"), 0755)
@@ -230,7 +230,7 @@ func TestRejectOverwrite(t *testing.T) {
 		t.Errorf("expected status 409, got %d", rr.Code)
 	}
 
-	var resp handlers.UploadResponse
+	var resp api.UploadResponse
 	json.NewDecoder(rr.Body).Decode(&resp)
 
 	if len(resp.Skipped) != 1 {
@@ -248,7 +248,7 @@ func TestRejectEmptyFilename(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	uploadHandler := handlers.NewUploadHandler(cfg)
+	uploadHandler := api.NewUploadHandler(cfg)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -266,7 +266,7 @@ func TestRejectEmptyFilename(t *testing.T) {
 	rr := httptest.NewRecorder()
 	uploadHandler.ServeHTTP(rr, req)
 
-	var resp handlers.UploadResponse
+	var resp api.UploadResponse
 	json.NewDecoder(rr.Body).Decode(&resp)
 
 	if len(resp.Uploaded) > 0 {
@@ -278,7 +278,7 @@ func TestRejectHiddenFiles(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	uploadHandler := handlers.NewUploadHandler(cfg)
+	uploadHandler := api.NewUploadHandler(cfg)
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -292,7 +292,7 @@ func TestRejectHiddenFiles(t *testing.T) {
 	rr := httptest.NewRecorder()
 	uploadHandler.ServeHTTP(rr, req)
 
-	var resp handlers.UploadResponse
+	var resp api.UploadResponse
 	json.NewDecoder(rr.Body).Decode(&resp)
 
 	if len(resp.Uploaded) > 0 {
@@ -307,7 +307,7 @@ func TestMethodNotAllowed(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	uploadHandler := handlers.NewUploadHandler(cfg)
+	uploadHandler := api.NewUploadHandler(cfg)
 
 	methods := []string{http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodPatch}
 
@@ -326,7 +326,7 @@ func TestInvalidContentType(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	uploadHandler := handlers.NewUploadHandler(cfg)
+	uploadHandler := api.NewUploadHandler(cfg)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/upload/test/", strings.NewReader("not multipart"))
 	req.Header.Set("Content-Type", "application/json")
@@ -343,7 +343,7 @@ func TestPartialSuccess(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer os.RemoveAll(tmpDir)
 
-	uploadHandler := handlers.NewUploadHandler(cfg)
+	uploadHandler := api.NewUploadHandler(cfg)
 
 	// Create one existing file
 	os.MkdirAll(filepath.Join(tmpDir, "partial"), 0755)
@@ -373,7 +373,7 @@ func TestPartialSuccess(t *testing.T) {
 		t.Errorf("expected 201, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	var resp handlers.UploadResponse
+	var resp api.UploadResponse
 	json.NewDecoder(rr.Body).Decode(&resp)
 
 	if len(resp.Uploaded) != 1 || resp.Uploaded[0] != "new.txt" {

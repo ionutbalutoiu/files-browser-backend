@@ -13,7 +13,7 @@ make build          # Build to build/files-svc
 make run            # Run on :8080 with /tmp/files
 make fmt && make lint
 go test ./...       # All tests
-go test -v ./internal/handlers/ -run TestUpload  # Single test
+go test -v ./internal/api/ -run TestUpload  # Single test
 ```
 
 ## Architecture
@@ -22,9 +22,10 @@ go test -v ./internal/handlers/ -run TestUpload  # Single test
 cmd/files-svc/     → Entry point, CLI flags
 internal/config/   → Configuration
 internal/server/   → HTTP server, routes
-internal/handlers/ → Request handlers (one per endpoint)
-internal/fs/       → Filesystem ops (SaveFile, Delete, Mkdir, SharePublic)
+internal/api/      → Request handlers (one per endpoint)
+internal/service/  → Filesystem ops (SaveFile, Delete, Mkdir, SharePublic)
 internal/pathutil/ → Path validation (security-critical)
+configs/           → Sample configuration files
 ```
 
 **Handler pattern:** Structs with `Config` field implementing `http.Handler`.

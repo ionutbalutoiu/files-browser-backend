@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"files-browser-backend/internal/api"
 	"files-browser-backend/internal/config"
-	"files-browser-backend/internal/handlers"
 )
 
 // Server wraps the HTTP server with configuration.
@@ -25,15 +25,15 @@ func New(cfg config.Config) *Server {
 	mux := http.NewServeMux()
 
 	// Register handlers
-	uploadHandler := handlers.NewUploadHandler(cfg)
-	deleteHandler := handlers.NewDeleteHandler(cfg)
-	mkdirHandler := handlers.NewMkdirHandler(cfg)
-	renameHandler := handlers.NewRenameHandler(cfg)
-	moveHandler := handlers.NewMoveHandler(cfg)
-	sharePublicHandler := handlers.NewSharePublicHandler(cfg)
-	sharePublicFilesHandler := handlers.NewSharePublicFilesHandler(cfg)
-	sharePublicDeleteHandler := handlers.NewSharePublicDeleteHandler(cfg)
-	healthHandler := handlers.NewHealthHandler()
+	uploadHandler := api.NewUploadHandler(cfg)
+	deleteHandler := api.NewDeleteHandler(cfg)
+	mkdirHandler := api.NewMkdirHandler(cfg)
+	renameHandler := api.NewRenameHandler(cfg)
+	moveHandler := api.NewMoveHandler(cfg)
+	sharePublicHandler := api.NewSharePublicHandler(cfg)
+	sharePublicFilesHandler := api.NewSharePublicFilesHandler(cfg)
+	sharePublicDeleteHandler := api.NewSharePublicDeleteHandler(cfg)
+	healthHandler := api.NewHealthHandler()
 
 	mux.Handle("/api/upload/", uploadHandler)
 	mux.Handle("/api/delete/", deleteHandler)

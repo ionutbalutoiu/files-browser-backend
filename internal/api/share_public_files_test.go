@@ -1,4 +1,4 @@
-package handlers_test
+package api_test
 
 import (
 	"encoding/json"
@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"files-browser-backend/internal/api"
 	"files-browser-backend/internal/config"
-	"files-browser-backend/internal/handlers"
 )
 
 func TestPublicShareFilesEmpty(t *testing.T) {
@@ -22,7 +22,7 @@ func TestPublicShareFilesEmpty(t *testing.T) {
 		MaxUploadSize: 10 * 1024 * 1024,
 	}
 
-	handler := handlers.NewSharePublicFilesHandler(cfg)
+	handler := api.NewSharePublicFilesHandler(cfg)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/share-public-files/", nil)
 	rr := httptest.NewRecorder()
@@ -66,7 +66,7 @@ func TestPublicShareFilesWithSymlinks(t *testing.T) {
 		MaxUploadSize: 10 * 1024 * 1024,
 	}
 
-	handler := handlers.NewSharePublicFilesHandler(cfg)
+	handler := api.NewSharePublicFilesHandler(cfg)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/share-public-files", nil)
 	rr := httptest.NewRecorder()
@@ -111,7 +111,7 @@ func TestPublicShareFilesBrokenSymlink(t *testing.T) {
 		MaxUploadSize: 10 * 1024 * 1024,
 	}
 
-	handler := handlers.NewSharePublicFilesHandler(cfg)
+	handler := api.NewSharePublicFilesHandler(cfg)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/share-public-files", nil)
 	rr := httptest.NewRecorder()
@@ -148,7 +148,7 @@ func TestPublicShareFilesExcludesDirectories(t *testing.T) {
 		MaxUploadSize: 10 * 1024 * 1024,
 	}
 
-	handler := handlers.NewSharePublicFilesHandler(cfg)
+	handler := api.NewSharePublicFilesHandler(cfg)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/share-public-files", nil)
 	rr := httptest.NewRecorder()
@@ -192,7 +192,7 @@ func TestPublicShareFilesSymlinkToDirectory(t *testing.T) {
 		MaxUploadSize: 10 * 1024 * 1024,
 	}
 
-	handler := handlers.NewSharePublicFilesHandler(cfg)
+	handler := api.NewSharePublicFilesHandler(cfg)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/share-public-files", nil)
 	rr := httptest.NewRecorder()
@@ -221,7 +221,7 @@ func TestPublicShareFilesNotEnabled(t *testing.T) {
 		MaxUploadSize: 10 * 1024 * 1024,
 	}
 
-	handler := handlers.NewSharePublicFilesHandler(cfg)
+	handler := api.NewSharePublicFilesHandler(cfg)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/share-public-files", nil)
 	rr := httptest.NewRecorder()
@@ -246,7 +246,7 @@ func TestPublicShareFilesMethodNotAllowed(t *testing.T) {
 		MaxUploadSize: 10 * 1024 * 1024,
 	}
 
-	handler := handlers.NewSharePublicFilesHandler(cfg)
+	handler := api.NewSharePublicFilesHandler(cfg)
 
 	methods := []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch}
 
@@ -278,7 +278,7 @@ func TestPublicShareFilesSorted(t *testing.T) {
 		MaxUploadSize: 10 * 1024 * 1024,
 	}
 
-	handler := handlers.NewSharePublicFilesHandler(cfg)
+	handler := api.NewSharePublicFilesHandler(cfg)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/share-public-files", nil)
 	rr := httptest.NewRecorder()

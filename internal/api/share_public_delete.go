@@ -1,4 +1,4 @@
-package handlers
+package api
 
 import (
 	"encoding/json"
@@ -7,8 +7,8 @@ import (
 	"net/http"
 
 	"files-browser-backend/internal/config"
-	"files-browser-backend/internal/fs"
 	"files-browser-backend/internal/pathutil"
+	"files-browser-backend/internal/service"
 )
 
 // SharePublicDeleteRequest is the JSON request for deleting a public share.
@@ -69,7 +69,7 @@ func (h *SharePublicDeleteHandler) ServeHTTP(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Delete the public share
-	if err := fs.DeletePublicShare(h.Config.PublicBaseDir, req.Path); err != nil {
+	if err := service.DeletePublicShare(h.Config.PublicBaseDir, req.Path); err != nil {
 		var pathErr *pathutil.PathError
 		if errors.As(err, &pathErr) {
 			ErrorResponse(w, pathErr.StatusCode, pathErr.Message)

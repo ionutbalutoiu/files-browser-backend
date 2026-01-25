@@ -1,4 +1,4 @@
-package handlers_test
+package api_test
 
 import (
 	"bytes"
@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"files-browser-backend/internal/api"
 	"files-browser-backend/internal/config"
-	"files-browser-backend/internal/handlers"
 )
 
 func TestSharePublicDeleteHandler_Success(t *testing.T) {
@@ -18,7 +18,7 @@ func TestSharePublicDeleteHandler_Success(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	defer os.RemoveAll(publicDir)
 
-	handler := handlers.NewSharePublicDeleteHandler(cfg)
+	handler := api.NewSharePublicDeleteHandler(cfg)
 
 	// Create a target file and symlink in public dir
 	targetFile := filepath.Join(tmpDir, "shared-file.txt")
@@ -31,7 +31,7 @@ func TestSharePublicDeleteHandler_Success(t *testing.T) {
 	os.Symlink(targetFile, linkPath)
 
 	// Create request body
-	body, _ := json.Marshal(handlers.SharePublicDeleteRequest{
+	body, _ := json.Marshal(api.SharePublicDeleteRequest{
 		Path: "photos/2026/shared-file.txt",
 	})
 
@@ -45,7 +45,7 @@ func TestSharePublicDeleteHandler_Success(t *testing.T) {
 	}
 
 	// Check response
-	var resp handlers.SharePublicDeleteResponse
+	var resp api.SharePublicDeleteResponse
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to parse response: %v", err)
 	}
@@ -72,9 +72,9 @@ func TestSharePublicDeleteHandler_NotFound(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	defer os.RemoveAll(publicDir)
 
-	handler := handlers.NewSharePublicDeleteHandler(cfg)
+	handler := api.NewSharePublicDeleteHandler(cfg)
 
-	body, _ := json.Marshal(handlers.SharePublicDeleteRequest{
+	body, _ := json.Marshal(api.SharePublicDeleteRequest{
 		Path: "nonexistent.txt",
 	})
 
@@ -93,13 +93,13 @@ func TestSharePublicDeleteHandler_NotASymlink(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	defer os.RemoveAll(publicDir)
 
-	handler := handlers.NewSharePublicDeleteHandler(cfg)
+	handler := api.NewSharePublicDeleteHandler(cfg)
 
 	// Create a regular file in public dir (not a symlink)
 	regularFile := filepath.Join(publicDir, "regular.txt")
 	os.WriteFile(regularFile, []byte("content"), 0644)
 
-	body, _ := json.Marshal(handlers.SharePublicDeleteRequest{
+	body, _ := json.Marshal(api.SharePublicDeleteRequest{
 		Path: "regular.txt",
 	})
 
@@ -123,9 +123,9 @@ func TestSharePublicDeleteHandler_PathTraversal(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	defer os.RemoveAll(publicDir)
 
-	handler := handlers.NewSharePublicDeleteHandler(cfg)
+	handler := api.NewSharePublicDeleteHandler(cfg)
 
-	body, _ := json.Marshal(handlers.SharePublicDeleteRequest{
+	body, _ := json.Marshal(api.SharePublicDeleteRequest{
 		Path: "../../../etc/passwd",
 	})
 
@@ -144,9 +144,9 @@ func TestSharePublicDeleteHandler_EmptyPath(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	defer os.RemoveAll(publicDir)
 
-	handler := handlers.NewSharePublicDeleteHandler(cfg)
+	handler := api.NewSharePublicDeleteHandler(cfg)
 
-	body, _ := json.Marshal(handlers.SharePublicDeleteRequest{
+	body, _ := json.Marshal(api.SharePublicDeleteRequest{
 		Path: "",
 	})
 
@@ -165,7 +165,7 @@ func TestSharePublicDeleteHandler_MethodNotAllowed(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	defer os.RemoveAll(publicDir)
 
-	handler := handlers.NewSharePublicDeleteHandler(cfg)
+	handler := api.NewSharePublicDeleteHandler(cfg)
 
 	// Test with POST method (should fail)
 	req := httptest.NewRequest(http.MethodPost, "/api/share-public-delete", nil)
@@ -186,9 +186,9 @@ func TestSharePublicDeleteHandler_PublicSharingDisabled(t *testing.T) {
 		MaxUploadSize: 10 * 1024 * 1024,
 	}
 
-	handler := handlers.NewSharePublicDeleteHandler(cfg)
+	handler := api.NewSharePublicDeleteHandler(cfg)
 
-	body, _ := json.Marshal(handlers.SharePublicDeleteRequest{
+	body, _ := json.Marshal(api.SharePublicDeleteRequest{
 		Path: "some/file.txt",
 	})
 
@@ -207,7 +207,7 @@ func TestSharePublicDeleteHandler_InvalidJSON(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 	defer os.RemoveAll(publicDir)
 
-	handler := handlers.NewSharePublicDeleteHandler(cfg)
+	handler := api.NewSharePublicDeleteHandler(cfg)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/share-public-delete", bytes.NewReader([]byte("invalid json")))
 	req.Header.Set("Content-Type", "application/json")
