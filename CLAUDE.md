@@ -28,7 +28,7 @@ internal/api/           → Request handlers
   folders/              → Create folder handler
   publicshares/         → Public share handlers
   health/               → Health check handler
-internal/service/       → Filesystem ops (SaveFile, Delete, Mkdir, SharePublic)
+internal/service/       → Filesystem ops (file/dir CRUD, public sharing)
 internal/pathutil/      → Path validation (security-critical)
 internal/httputil/      → HTTP response helpers (ErrorResponse, JSONResponse)
 configs/                → Sample configuration files
@@ -36,7 +36,7 @@ configs/                → Sample configuration files
 
 **Handler pattern:** Structs with `Config` field implementing `http.Handler`.
 
-**Path validators** in `pathutil/util.go`: `ResolveTargetDir`, `ResolveDeletePath`, `ResolveMkdirPath`, `ResolveMovePaths`, `ResolveSharePublicPath`, `ValidateRelativePath`.
+**Path validation:** `pathutil/` contains `Resolve*` and `Validate*` functions for secure path handling.
 
 **Errors:** `PathError` (with HTTP status), `FileError` (with conflict flag). Use `errors.As()`.
 
