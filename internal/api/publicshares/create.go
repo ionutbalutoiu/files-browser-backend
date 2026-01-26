@@ -1,8 +1,8 @@
+// Package publicshares provides HTTP handlers for public file sharing operations.
 package publicshares
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"log"
 	"net/http"
 
@@ -52,41 +52,56 @@ func NewCreateHandler(cfg config.Config) *CreateHandler {
 // - Validates symlink destination is within public base directory
 // - Rejects path traversal and absolute paths
 func (h *CreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Check if public sharing is enabled
-	if h.Config.PublicBaseDir == "" {
-		httputil.ErrorResponse(w, http.StatusNotImplemented, "public sharing is not enabled (public-base-dir not configured)")
+	if !sharingEnabled(h.Config.PublicBaseDir, w) {
 		return
 	}
-
-	// Parse JSON body
-	var req CreateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.ErrorResponse(w, http.StatusBadRequest, "invalid JSON body")
+	req, ok := h.parseRequest(w, r)
+	if !ok {
 		return
 	}
-
-	// Validate path is provided
-	if req.Path == "" {
-		httputil.ErrorResponse(w, http.StatusBadRequest, "path is required")
+	resolvedPath, virtualPath, ok := h.resolvePath(w, req.Path)
+	if !ok {
 		return
 	}
-
-	// Resolve and validate target path for sharing
-	resolvedPath, virtualPath, err := pathutil.ResolveSharePublicPath(h.Config.BaseDir, req.Path)
-	if err != nil {
-		httputil.HandlePathError(w, err, "share-public path resolution")
+	if !h.createShare(w, r, resolvedPath, virtualPath) {
 		return
 	}
-
-	// Create the public share symlink
-	if err := service.SharePublic(r.Context(), resolvedPath, h.Config.PublicBaseDir, virtualPath); err != nil {
-		httputil.HandlePathError(w, err, "share-public")
-		return
-	}
-
 	log.Printf("OK: created public share for %s", resolvedPath)
 	httputil.JSONResponse(w, http.StatusCreated, CreateResponse{
 		ShareID: encodeShareID(virtualPath),
 		Path:    virtualPath,
 	})
+}
+
+// parseRequest decodes and validates the JSON request body.
+func (h *CreateHandler) parseRequest(w http.ResponseWriter, r *http.Request) (CreateRequest, bool) {
+	req, err := httputil.DecodeJSON[CreateRequest](r)
+	if err != nil {
+		httputil.ErrorResponse(w, http.StatusBadRequest, "invalid JSON body")
+		return CreateRequest{}, false
+	}
+	if req.Path == "" {
+		httputil.ErrorResponse(w, http.StatusBadRequest, "path is required")
+		return CreateRequest{}, false
+	}
+	return req, true
+}
+
+// resolvePath validates and resolves the target path for sharing.
+func (h *CreateHandler) resolvePath(w http.ResponseWriter, path string) (resolved, virtual string, ok bool) {
+	resolved, virtual, err := pathutil.ResolveSharePublicPath(h.Config.BaseDir, path)
+	if err != nil {
+		httputil.HandlePathError(w, err, "share-public path resolution")
+		return "", "", false
+	}
+	return resolved, virtual, true
+}
+
+// createShare creates the public share symlink at the resolved path.
+func (h *CreateHandler) createShare(w http.ResponseWriter, r *http.Request, resolved, virtual string) bool {
+	if err := service.SharePublic(r.Context(), resolved, h.Config.PublicBaseDir, virtual); err != nil {
+		httputil.HandlePathError(w, err, "share-public")
+		return false
+	}
+	return true
 }

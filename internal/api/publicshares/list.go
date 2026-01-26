@@ -1,7 +1,6 @@
 package publicshares
 
 import (
-	"log"
 	"net/http"
 
 	"files-browser-backend/internal/config"
@@ -22,24 +21,26 @@ func NewListHandler(cfg config.Config) *ListHandler {
 // ServeHTTP handles GET /api/public-shares requests.
 // Returns a JSON array of relative paths to all publicly shared files.
 func (h *ListHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Check if public sharing is enabled
-	if h.Config.PublicBaseDir == "" {
-		httputil.ErrorResponse(w, http.StatusNotImplemented, "public sharing is not enabled (public-base-dir not configured)")
+	if !sharingEnabled(h.Config.PublicBaseDir, w) {
 		return
 	}
+	files, ok := h.listFiles(w, r)
+	if !ok {
+		return
+	}
+	httputil.JSONResponse(w, http.StatusOK, files)
+}
 
-	// List all publicly shared files
+// listFiles retrieves all publicly shared files.
+func (h *ListHandler) listFiles(w http.ResponseWriter, r *http.Request) ([]string, bool) {
 	files, err := service.ListSharePublicFiles(r.Context(), h.Config.PublicBaseDir)
 	if err != nil {
-		log.Printf("ERROR: failed to list public shared files: %v", err)
-		httputil.ErrorResponse(w, http.StatusInternalServerError, "failed to list public shared files")
-		return
+		httputil.HandlePathError(w, err, "list public shares")
+		return nil, false
 	}
-
-	// Return empty array instead of null if no files
+	// API boundary: return [] instead of null for empty results.
 	if files == nil {
-		files = []string{}
+		return []string{}, true
 	}
-
-	httputil.JSONResponse(w, http.StatusOK, files)
+	return files, true
 }

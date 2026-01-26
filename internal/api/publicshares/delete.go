@@ -28,31 +28,39 @@ func NewDeleteHandler(cfg config.Config) *DeleteHandler {
 // - Only deletes symlinks (not regular files or directories)
 // - Never removes public-base-dir itself during cleanup
 func (h *DeleteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Check if public sharing is enabled
-	if h.Config.PublicBaseDir == "" {
-		httputil.ErrorResponse(w, http.StatusNotImplemented, "public sharing is not enabled (public-base-dir not configured)")
+	if !sharingEnabled(h.Config.PublicBaseDir, w) {
 		return
 	}
+	path, ok := h.parsePath(w, r)
+	if !ok {
+		return
+	}
+	if !h.deleteShare(w, r, path) {
+		return
+	}
+	log.Printf("OK: deleted public share for %s", path)
+	w.WriteHeader(http.StatusNoContent)
+}
 
-	// Extract path from query parameter
+// parsePath extracts and validates the path query parameter.
+func (h *DeleteHandler) parsePath(w http.ResponseWriter, r *http.Request) (string, bool) {
 	path := r.URL.Query().Get("path")
 	if path == "" {
 		httputil.ErrorResponse(w, http.StatusBadRequest, "path query parameter is required")
-		return
+		return "", false
 	}
-
-	// Validate path doesn't contain traversal attempts
 	if err := pathutil.ValidateRelativePath(path); err != nil {
 		httputil.ErrorResponse(w, http.StatusBadRequest, err.Error())
-		return
+		return "", false
 	}
+	return path, true
+}
 
-	// Delete the public share
+// deleteShare removes the public share symlink.
+func (h *DeleteHandler) deleteShare(w http.ResponseWriter, r *http.Request, path string) bool {
 	if err := service.DeletePublicShare(r.Context(), h.Config.PublicBaseDir, path); err != nil {
 		httputil.HandlePathError(w, err, "public-share delete")
-		return
+		return false
 	}
-
-	log.Printf("OK: deleted public share for %s", path)
-	w.WriteHeader(http.StatusNoContent)
+	return true
 }
