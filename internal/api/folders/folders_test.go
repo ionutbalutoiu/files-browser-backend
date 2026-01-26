@@ -1,3 +1,4 @@
+// Package folders_test provides tests for the folders API handlers.
 package folders_test
 
 import (
@@ -13,56 +14,68 @@ import (
 	"files-browser-backend/internal/config"
 )
 
-// FolderTestResponse matches the JSON response structure
-type FolderTestResponse struct {
+// testResponse matches the JSON response structure for folder creation.
+type testResponse struct {
 	Created string `json:"created"`
+	Error   string `json:"error"`
 }
 
-// setupTestHandler creates a test configuration with a temporary base directory.
-func setupTestHandler(t *testing.T) (config.Config, string) {
-	t.Helper()
-	tmpDir, err := os.MkdirTemp("", "folders-test-*")
-	if err != nil {
-		t.Fatalf("failed to create temp dir: %v", err)
-	}
+// testEnv holds the test environment configuration.
+type testEnv struct {
+	handler *folders.CreateHandler
+	baseDir string
+}
 
+// setupTest creates a test environment with a temporary base directory.
+func setupTest(t *testing.T) testEnv {
+	t.Helper()
+	baseDir := t.TempDir()
 	cfg := config.Config{
 		ListenAddr:    ":8080",
-		BaseDir:       tmpDir,
-		MaxUploadSize: 10 * 1024 * 1024, // 10MB for tests
+		BaseDir:       baseDir,
+		MaxUploadSize: 10 * 1024 * 1024,
 	}
-
-	return cfg, tmpDir
+	return testEnv{
+		handler: folders.NewCreateHandler(cfg),
+		baseDir: baseDir,
+	}
 }
 
-func TestFoldersCreateSimple(t *testing.T) {
-	cfg, tmpDir := setupTestHandler(t)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	handler := folders.NewCreateHandler(cfg)
-
-	body, _ := json.Marshal(folders.CreateRequest{Path: "newdir"})
-
+// doRequest executes a folder creation request and returns the response.
+func (e testEnv) doRequest(t *testing.T, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, _ := json.Marshal(folders.CreateRequest{Path: path})
 	req := httptest.NewRequest(http.MethodPost, "/api/folders", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	e.handler.ServeHTTP(rr, req)
+	return rr
+}
 
-	if rr.Code != http.StatusCreated {
-		t.Errorf("expected 201, got %d: %s", rr.Code, rr.Body.String())
-	}
+// doRawRequest executes a request with raw body content.
+func (e testEnv) doRawRequest(t *testing.T, body []byte) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/folders", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	e.handler.ServeHTTP(rr, req)
+	return rr
+}
 
-	var resp FolderTestResponse
+// decodeResponse parses the JSON response body.
+func decodeResponse(t *testing.T, rr *httptest.ResponseRecorder) testResponse {
+	t.Helper()
+	var resp testResponse
 	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
+		t.Fatalf("decode response: %v", err)
 	}
+	return resp
+}
 
-	if resp.Created != "newdir/" {
-		t.Errorf("unexpected created path: %s", resp.Created)
-	}
-
-	// Verify directory exists
-	info, err := os.Stat(filepath.Join(tmpDir, "newdir"))
+// assertDirExists verifies a directory exists at the given path.
+func assertDirExists(t *testing.T, path string) {
+	t.Helper()
+	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("directory should exist: %v", err)
 	}
@@ -71,126 +84,93 @@ func TestFoldersCreateSimple(t *testing.T) {
 	}
 }
 
-func TestFoldersCreateNested(t *testing.T) {
-	cfg, tmpDir := setupTestHandler(t)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+// assertDirNotExists verifies no directory exists at the given path.
+func assertDirNotExists(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("directory should not exist")
+	}
+}
 
-	handler := folders.NewCreateHandler(cfg)
+func TestCreateSimple(t *testing.T) {
+	env := setupTest(t)
 
-	// Create parent directory first
-	_ = os.MkdirAll(filepath.Join(tmpDir, "photos/2026"), 0755)
-
-	body, _ := json.Marshal(folders.CreateRequest{Path: "photos/2026/vacation"})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/folders", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	rr := env.doRequest(t, "newdir")
 
 	if rr.Code != http.StatusCreated {
 		t.Errorf("expected 201, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	var resp FolderTestResponse
-	_ = json.NewDecoder(rr.Body).Decode(&resp)
-
-	if resp.Created != "photos/2026/vacation/" {
-		t.Errorf("unexpected created path: %s", resp.Created)
+	resp := decodeResponse(t, rr)
+	if resp.Created != "newdir/" {
+		t.Errorf("expected created=newdir/, got %s", resp.Created)
 	}
 
-	// Verify directory exists
-	info, err := os.Stat(filepath.Join(tmpDir, "photos/2026/vacation"))
-	if err != nil {
-		t.Fatalf("directory should exist: %v", err)
-	}
-	if !info.IsDir() {
-		t.Error("path should be a directory")
-	}
+	assertDirExists(t, filepath.Join(env.baseDir, "newdir"))
 }
 
-func TestFoldersCreateParentNotExist(t *testing.T) {
-	cfg, tmpDir := setupTestHandler(t)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+func TestCreateNested(t *testing.T) {
+	env := setupTest(t)
+	_ = os.MkdirAll(filepath.Join(env.baseDir, "photos/2026"), 0755)
 
-	handler := folders.NewCreateHandler(cfg)
+	rr := env.doRequest(t, "photos/2026/vacation")
 
-	body, _ := json.Marshal(folders.CreateRequest{Path: "nonexistent/subdir"})
+	if rr.Code != http.StatusCreated {
+		t.Errorf("expected 201, got %d: %s", rr.Code, rr.Body.String())
+	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/folders", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	resp := decodeResponse(t, rr)
+	if resp.Created != "photos/2026/vacation/" {
+		t.Errorf("expected created=photos/2026/vacation/, got %s", resp.Created)
+	}
+
+	assertDirExists(t, filepath.Join(env.baseDir, "photos/2026/vacation"))
+}
+
+func TestCreateParentNotExist(t *testing.T) {
+	env := setupTest(t)
+
+	rr := env.doRequest(t, "nonexistent/subdir")
 
 	if rr.Code != http.StatusNotFound {
 		t.Errorf("expected 404, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 
-func TestFoldersCreateAlreadyExists(t *testing.T) {
-	cfg, tmpDir := setupTestHandler(t)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+func TestCreateAlreadyExists(t *testing.T) {
+	env := setupTest(t)
+	_ = os.MkdirAll(filepath.Join(env.baseDir, "existing"), 0755)
 
-	handler := folders.NewCreateHandler(cfg)
-
-	// Create directory first
-	_ = os.MkdirAll(filepath.Join(tmpDir, "existing"), 0755)
-
-	body, _ := json.Marshal(folders.CreateRequest{Path: "existing"})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/folders", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	rr := env.doRequest(t, "existing")
 
 	if rr.Code != http.StatusConflict {
 		t.Errorf("expected 409, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 
-func TestFoldersCreateFileExists(t *testing.T) {
-	cfg, tmpDir := setupTestHandler(t)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+func TestCreateFileExists(t *testing.T) {
+	env := setupTest(t)
+	_ = os.WriteFile(filepath.Join(env.baseDir, "myfile"), []byte("content"), 0644)
 
-	handler := folders.NewCreateHandler(cfg)
-
-	// Create a file with the target name
-	_ = os.WriteFile(filepath.Join(tmpDir, "myfile"), []byte("content"), 0644)
-
-	body, _ := json.Marshal(folders.CreateRequest{Path: "myfile"})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/folders", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	rr := env.doRequest(t, "myfile")
 
 	if rr.Code != http.StatusConflict {
 		t.Errorf("expected 409, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 
-func TestFoldersCreateEmptyPath(t *testing.T) {
-	cfg, tmpDir := setupTestHandler(t)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+func TestCreateEmptyPath(t *testing.T) {
+	env := setupTest(t)
 
-	handler := folders.NewCreateHandler(cfg)
-
-	body, _ := json.Marshal(folders.CreateRequest{Path: ""})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/folders", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	rr := env.doRequest(t, "")
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 
-func TestFoldersCreatePathTraversal(t *testing.T) {
-	cfg, tmpDir := setupTestHandler(t)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	handler := folders.NewCreateHandler(cfg)
+func TestCreatePathTraversal(t *testing.T) {
+	env := setupTest(t)
 
 	tests := []struct {
 		name string
@@ -203,12 +183,7 @@ func TestFoldersCreatePathTraversal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			body, _ := json.Marshal(folders.CreateRequest{Path: tt.path})
-
-			req := httptest.NewRequest(http.MethodPost, "/api/folders", bytes.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
-			rr := httptest.NewRecorder()
-			handler.ServeHTTP(rr, req)
+			rr := env.doRequest(t, tt.path)
 
 			if rr.Code != http.StatusBadRequest && rr.Code != http.StatusForbidden {
 				t.Errorf("expected 400 or 403, got %d: %s", rr.Code, rr.Body.String())
@@ -217,142 +192,77 @@ func TestFoldersCreatePathTraversal(t *testing.T) {
 	}
 }
 
-func TestFoldersCreateAbsolutePath(t *testing.T) {
-	cfg, tmpDir := setupTestHandler(t)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+func TestCreateAbsolutePath(t *testing.T) {
+	env := setupTest(t)
 
-	handler := folders.NewCreateHandler(cfg)
-
-	body, _ := json.Marshal(folders.CreateRequest{Path: "/etc/passwd"})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/folders", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	rr := env.doRequest(t, "/etc/passwd")
 
 	if rr.Code != http.StatusBadRequest && rr.Code != http.StatusForbidden && rr.Code != http.StatusNotFound {
 		t.Errorf("expected 400, 403, or 404, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 
-func TestFoldersCreateSymlinkParent(t *testing.T) {
-	cfg, tmpDir := setupTestHandler(t)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+func TestCreateSymlinkParent(t *testing.T) {
+	env := setupTest(t)
 
-	handler := folders.NewCreateHandler(cfg)
+	// Create a directory outside base.
+	outsideDir := t.TempDir()
 
-	// Create a directory outside base (simulated with another dir in temp)
-	outsideDir, err := os.MkdirTemp("", "outside-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.RemoveAll(outsideDir) }()
-
-	// Create a symlink inside base pointing to outside
-	symlinkPath := filepath.Join(tmpDir, "escape-link")
+	// Create a symlink inside base pointing to outside.
+	symlinkPath := filepath.Join(env.baseDir, "escape-link")
 	_ = os.Symlink(outsideDir, symlinkPath)
 
-	body, _ := json.Marshal(folders.CreateRequest{Path: "escape-link/newdir"})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/folders", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	rr := env.doRequest(t, "escape-link/newdir")
 
 	if rr.Code != http.StatusForbidden {
 		t.Errorf("expected 403 for symlink escape, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	// Verify no directory was created outside
-	if _, err := os.Stat(filepath.Join(outsideDir, "newdir")); !os.IsNotExist(err) {
-		t.Error("directory should not have been created outside base")
-	}
+	assertDirNotExists(t, filepath.Join(outsideDir, "newdir"))
 }
 
-func TestFoldersCreateSymlinkTarget(t *testing.T) {
-	cfg, tmpDir := setupTestHandler(t)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+func TestCreateSymlinkTarget(t *testing.T) {
+	env := setupTest(t)
 
-	handler := folders.NewCreateHandler(cfg)
+	// Create a real directory and a symlink to it.
+	_ = os.MkdirAll(filepath.Join(env.baseDir, "realdir"), 0755)
+	_ = os.Symlink(filepath.Join(env.baseDir, "realdir"), filepath.Join(env.baseDir, "link"))
 
-	// Create a real directory
-	_ = os.MkdirAll(filepath.Join(tmpDir, "realdir"), 0755)
+	rr := env.doRequest(t, "link")
 
-	// Create a symlink
-	symlinkPath := filepath.Join(tmpDir, "link")
-	_ = os.Symlink(filepath.Join(tmpDir, "realdir"), symlinkPath)
-
-	body, _ := json.Marshal(folders.CreateRequest{Path: "link"})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/folders", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	// Should fail because path already exists as symlink
+	// Should fail because path already exists as symlink.
 	if rr.Code != http.StatusConflict {
 		t.Errorf("expected 409, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 
-func TestFoldersCreateDirectoryWithSpaces(t *testing.T) {
-	cfg, tmpDir := setupTestHandler(t)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+func TestCreateDirectoryWithSpaces(t *testing.T) {
+	env := setupTest(t)
 
-	handler := folders.NewCreateHandler(cfg)
-
-	body, _ := json.Marshal(folders.CreateRequest{Path: "my folder"})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/folders", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	rr := env.doRequest(t, "my folder")
 
 	if rr.Code != http.StatusCreated {
 		t.Errorf("expected 201, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	// Verify directory with spaces exists
-	info, err := os.Stat(filepath.Join(tmpDir, "my folder"))
-	if err != nil {
-		t.Fatalf("directory should exist: %v", err)
-	}
-	if !info.IsDir() {
-		t.Error("path should be a directory")
-	}
+	assertDirExists(t, filepath.Join(env.baseDir, "my folder"))
 }
 
-func TestFoldersCreateParentIsFile(t *testing.T) {
-	cfg, tmpDir := setupTestHandler(t)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+func TestCreateParentIsFile(t *testing.T) {
+	env := setupTest(t)
+	_ = os.WriteFile(filepath.Join(env.baseDir, "notadir"), []byte("content"), 0644)
 
-	handler := folders.NewCreateHandler(cfg)
-
-	// Create a file where we want the parent to be
-	_ = os.WriteFile(filepath.Join(tmpDir, "notadir"), []byte("content"), 0644)
-
-	body, _ := json.Marshal(folders.CreateRequest{Path: "notadir/subdir"})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/folders", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	rr := env.doRequest(t, "notadir/subdir")
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d: %s", rr.Code, rr.Body.String())
 	}
 }
 
-func TestFoldersCreateInvalidJSON(t *testing.T) {
-	cfg, tmpDir := setupTestHandler(t)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+func TestCreateInvalidJSON(t *testing.T) {
+	env := setupTest(t)
 
-	handler := folders.NewCreateHandler(cfg)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/folders", bytes.NewReader([]byte("invalid json")))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	rr := env.doRawRequest(t, []byte("invalid json"))
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d: %s", rr.Code, rr.Body.String())

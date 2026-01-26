@@ -74,7 +74,7 @@ func (c Config) Validate() (Config, error) {
 
 		// Create public base directory if it doesn't exist
 		if err := os.MkdirAll(absPublic, 0755); err != nil {
-			return c, fmt.Errorf("failed to create public base directory: %w", err)
+			return c, fmt.Errorf("create public base directory: %w", err)
 		}
 
 		// Verify it's a directory

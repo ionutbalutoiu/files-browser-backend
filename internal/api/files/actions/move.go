@@ -1,9 +1,7 @@
 package actions
 
 import (
-	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"os"
 
@@ -40,61 +38,50 @@ func NewMoveHandler(cfg config.Config) *MoveHandler {
 	return &MoveHandler{Config: cfg}
 }
 
+// validateMoveRequest validates the required fields of a move request.
+func validateMoveRequest(req MoveRequest) error {
+	if req.From == "" {
+		return errors.New("from field is required")
+	}
+	if req.To == "" {
+		return errors.New("to field is required")
+	}
+	return nil
+}
+
 // ServeHTTP handles POST /api/files/move requests.
 // Request body: {"from": "old/path", "to": "new/path"}
 //
 // SECURITY CRITICAL:
-// - Uses Lstat to avoid following symlinks
-// - Validates both source and destination paths are within base directory
-// - Rejects path traversal, absolute paths, and symlink escapes
-// - Does not allow overwriting existing files
+// - Uses Lstat to avoid following symlinks.
+// - Validates both source and destination paths are within base directory.
+// - Rejects path traversal, absolute paths, and symlink escapes.
+// - Does not allow overwriting existing files.
 func (h *MoveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Parse JSON body
-	var req MoveRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := httputil.DecodeJSON[MoveRequest](r)
+	if err != nil {
 		httputil.ErrorResponse(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
 
-	// Validate required fields
-	if req.From == "" {
-		httputil.ErrorResponse(w, http.StatusBadRequest, "from field is required")
-		return
-	}
-	if req.To == "" {
-		httputil.ErrorResponse(w, http.StatusBadRequest, "to field is required")
+	if err := validateMoveRequest(req); err != nil {
+		httputil.ErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	// Resolve and validate paths for move
-	resolvedSource, resolvedDest, virtualSource, virtualDest, err := pathutil.ResolveMovePaths(h.Config.BaseDir, req.From, req.To)
+	resolvedSource, resolvedDest, virtualSource, virtualDest, err := pathutil.ResolveMovePaths(
+		h.Config.BaseDir, req.From, req.To,
+	)
 	if err != nil {
-		var pathErr *pathutil.PathError
-		if errors.As(err, &pathErr) {
-			httputil.ErrorResponse(w, pathErr.StatusCode, pathErr.Message)
-			return
-		}
-		log.Printf("ERROR: move path resolution failed: %v", err)
-		httputil.ErrorResponse(w, http.StatusInternalServerError, "internal server error")
+		httputil.HandlePathError(w, err, "move path resolution")
 		return
 	}
 
-	// Perform move
 	if err := os.Rename(resolvedSource, resolvedDest); err != nil {
-		if os.IsNotExist(err) {
-			httputil.ErrorResponse(w, http.StatusNotFound, "source path does not exist")
-			return
-		}
-		if os.IsPermission(err) {
-			httputil.ErrorResponse(w, http.StatusForbidden, "permission denied")
-			return
-		}
-		log.Printf("ERROR: move failed from %s to %s: %v", resolvedSource, resolvedDest, err)
-		httputil.ErrorResponse(w, http.StatusInternalServerError, "move failed")
+		httputil.HandleRenameError(w, err, "move")
 		return
 	}
 
-	log.Printf("OK: moved %s to %s", resolvedSource, resolvedDest)
 	httputil.JSONResponse(w, http.StatusOK, MoveResponse{
 		From:    virtualSource,
 		To:      virtualDest,

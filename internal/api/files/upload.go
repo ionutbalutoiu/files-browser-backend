@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"strings"
@@ -35,64 +34,56 @@ func NewUploadHandler(cfg config.Config) *UploadHandler {
 	return &UploadHandler{Config: cfg}
 }
 
-// ServeHTTP handles PUT /api/files?path=<path> requests.
-func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Check Content-Type
+// validateContentType checks if the request has the correct Content-Type header.
+func validateContentType(r *http.Request) error {
 	contentType := r.Header.Get("Content-Type")
 	if !strings.HasPrefix(contentType, "multipart/form-data") {
-		httputil.ErrorResponse(w, http.StatusBadRequest, "Content-Type must be multipart/form-data")
+		return errors.New("content-type must be multipart/form-data")
+	}
+	return nil
+}
+
+// determineResponseStatus calculates the appropriate HTTP status code based on response.
+func determineResponseStatus(resp Response) int {
+	if len(resp.Uploaded) > 0 {
+		return http.StatusCreated
+	}
+	if len(resp.Skipped) > 0 {
+		return http.StatusConflict
+	}
+	if len(resp.Errors) > 0 {
+		return http.StatusBadRequest
+	}
+	return http.StatusCreated
+}
+
+// ServeHTTP handles PUT /api/files?path=<path> requests.
+func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if err := validateContentType(r); err != nil {
+		httputil.ErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	// Extract target path from query parameter (empty = root)
 	targetPath := r.URL.Query().Get("path")
-
-	// Resolve and validate target directory
 	targetDir, err := pathutil.ResolveTargetDir(h.Config.BaseDir, targetPath)
 	if err != nil {
-		var pathErr *pathutil.PathError
-		if errors.As(err, &pathErr) {
-			httputil.ErrorResponse(w, pathErr.StatusCode, pathErr.Message)
-			return
-		}
-		log.Printf("ERROR: path resolution failed: %v", err)
-		httputil.ErrorResponse(w, http.StatusInternalServerError, "internal server error")
+		httputil.HandlePathError(w, err, "upload path resolution")
 		return
 	}
 
-	// Wrap request body with size limit
 	r.Body = http.MaxBytesReader(w, r.Body, h.Config.MaxUploadSize)
-
-	// Parse multipart form with a small memory buffer (32MB)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		if strings.Contains(err.Error(), "request body too large") {
 			httputil.ErrorResponse(w, http.StatusRequestEntityTooLarge, "upload size exceeds limit")
 			return
 		}
-		log.Printf("ERROR: failed to parse multipart form: %v", err)
 		httputil.ErrorResponse(w, http.StatusBadRequest, "failed to parse multipart form")
 		return
 	}
-	defer func() {
-		if err := r.MultipartForm.RemoveAll(); err != nil {
-			log.Printf("WARN: failed to remove multipart form temp files: %v", err)
-		}
-	}()
+	defer func() { _ = r.MultipartForm.RemoveAll() }()
 
-	// Process uploaded files
 	response := h.processUploads(r.Context(), r.MultipartForm, targetDir)
-
-	// Determine response status
-	status := http.StatusCreated
-	if len(response.Uploaded) == 0 {
-		if len(response.Skipped) > 0 {
-			status = http.StatusConflict
-		} else if len(response.Errors) > 0 {
-			status = http.StatusBadRequest
-		}
-	}
-
-	httputil.JSONResponse(w, status, response)
+	httputil.JSONResponse(w, determineResponseStatus(response), response)
 }
 
 // processUploads handles all files in the multipart form.
@@ -103,42 +94,37 @@ func (h *UploadHandler) processUploads(ctx context.Context, form *multipart.Form
 		Errors:   []string{},
 	}
 
-	// Ensure target directory exists
 	if err := service.EnsureDir(ctx, targetDir); err != nil {
-		log.Printf("ERROR: failed to create target directory %s: %v", targetDir, err)
 		response.Errors = append(response.Errors, "failed to create target directory")
 		return response
 	}
 
-	// Process all file fields
-	for fieldName, files := range form.File {
+	for _, files := range form.File {
 		for _, fileHeader := range files {
-			err := service.SaveFile(ctx, fileHeader, targetDir, h.Config.BaseDir)
-			if err != nil {
-				var fileErr *service.FileError
-				if errors.As(err, &fileErr) {
-					if fileErr.IsConflict {
-						response.Skipped = append(response.Skipped, fileHeader.Filename)
-						log.Printf("SKIP: file %s already exists (field: %s)", fileHeader.Filename, fieldName)
-					} else {
-						response.Errors = append(response.Errors, fmt.Sprintf("%s: %s", fileHeader.Filename, fileErr.Message))
-						log.Printf("ERROR: file %s (field: %s): %s", fileHeader.Filename, fieldName, fileErr.Message)
-					}
-				} else {
-					response.Errors = append(response.Errors, fmt.Sprintf("%s: internal error", fileHeader.Filename))
-					log.Printf("ERROR: file %s (field: %s): %v", fileHeader.Filename, fieldName, err)
-				}
-				continue
-			}
-			response.Uploaded = append(response.Uploaded, fileHeader.Filename)
-			log.Printf("OK: uploaded %s to %s (field: %s)", fileHeader.Filename, targetDir, fieldName)
+			h.processFile(ctx, fileHeader, targetDir, &response)
 		}
 	}
 
-	// Clear errors array if empty for cleaner JSON
-	if len(response.Errors) == 0 {
-		response.Errors = nil
+	return response
+}
+
+// processFile handles a single file upload and updates the response accordingly.
+func (h *UploadHandler) processFile(ctx context.Context, fh *multipart.FileHeader, targetDir string, resp *Response) {
+	err := service.SaveFile(ctx, fh, targetDir, h.Config.BaseDir)
+	if err == nil {
+		resp.Uploaded = append(resp.Uploaded, fh.Filename)
+		return
 	}
 
-	return response
+	var fileErr *service.FileError
+	if errors.As(err, &fileErr) {
+		if fileErr.IsConflict {
+			resp.Skipped = append(resp.Skipped, fh.Filename)
+		} else {
+			resp.Errors = append(resp.Errors, fmt.Sprintf("%s: %s", fh.Filename, fileErr.Message))
+		}
+		return
+	}
+
+	resp.Errors = append(resp.Errors, fmt.Sprintf("%s: internal error", fh.Filename))
 }

@@ -3,7 +3,6 @@ package publicshares
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"log"
 	"net/http"
 
@@ -75,25 +74,13 @@ func (h *CreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Resolve and validate target path for sharing
 	resolvedPath, virtualPath, err := pathutil.ResolveSharePublicPath(h.Config.BaseDir, req.Path)
 	if err != nil {
-		var pathErr *pathutil.PathError
-		if errors.As(err, &pathErr) {
-			httputil.ErrorResponse(w, pathErr.StatusCode, pathErr.Message)
-			return
-		}
-		log.Printf("ERROR: share-public path resolution failed: %v", err)
-		httputil.ErrorResponse(w, http.StatusInternalServerError, "internal server error")
+		httputil.HandlePathError(w, err, "share-public path resolution")
 		return
 	}
 
 	// Create the public share symlink
 	if err := service.SharePublic(r.Context(), resolvedPath, h.Config.PublicBaseDir, virtualPath); err != nil {
-		var pathErr *pathutil.PathError
-		if errors.As(err, &pathErr) {
-			httputil.ErrorResponse(w, pathErr.StatusCode, pathErr.Message)
-			return
-		}
-		log.Printf("ERROR: share-public failed for %s: %v", resolvedPath, err)
-		httputil.ErrorResponse(w, http.StatusInternalServerError, "internal server error")
+		httputil.HandlePathError(w, err, "share-public")
 		return
 	}
 

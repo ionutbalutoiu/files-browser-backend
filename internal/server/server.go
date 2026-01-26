@@ -26,11 +26,10 @@ func New(cfg config.Config) *Server {
 	api.RegisterRoutes(mux, cfg)
 
 	httpServer := &http.Server{
-		Addr:         cfg.ListenAddr,
-		Handler:      mux,
-		ReadTimeout:  0, // No timeout for large uploads
-		WriteTimeout: 0, // No timeout for large uploads
-		IdleTimeout:  120 * time.Second,
+		Addr:        cfg.ListenAddr,
+		Handler:     mux,
+		IdleTimeout: 120 * time.Second,
+		// ReadTimeout and WriteTimeout default to 0 (no timeout for large uploads).
 	}
 
 	return &Server{
@@ -66,7 +65,8 @@ func (s *Server) Run() error {
 	if s.config.PublicBaseDir != "" {
 		log.Printf("Public base directory: %s", s.config.PublicBaseDir)
 	}
-	log.Printf("Max upload size: %d bytes (%.2f GB)", s.config.MaxUploadSize, float64(s.config.MaxUploadSize)/(1024*1024*1024))
+	log.Printf("Max upload size: %d bytes (%.2f GB)",
+		s.config.MaxUploadSize, float64(s.config.MaxUploadSize)/(1024*1024*1024))
 
 	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err

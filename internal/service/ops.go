@@ -54,7 +54,7 @@ func SaveFile(ctx context.Context, fh *multipart.FileHeader, targetDir, baseDir 
 	// Open uploaded file for reading
 	src, err := fh.Open()
 	if err != nil {
-		return fmt.Errorf("failed to open uploaded file: %w", err)
+		return fmt.Errorf("open uploaded file: %w", err)
 	}
 	defer func() {
 		if err := src.Close(); err != nil {
@@ -68,7 +68,7 @@ func SaveFile(ctx context.Context, fh *multipart.FileHeader, targetDir, baseDir 
 		if os.IsExist(err) {
 			return &FileError{Message: "file already exists", IsConflict: true}
 		}
-		return fmt.Errorf("failed to create destination file: %w", err)
+		return fmt.Errorf("create destination file: %w", err)
 	}
 
 	// Stream copy from source to destination
@@ -80,7 +80,7 @@ func SaveFile(ctx context.Context, fh *multipart.FileHeader, targetDir, baseDir 
 		if removeErr := os.Remove(destPath); removeErr != nil {
 			log.Printf("WARN: failed to remove partial file during cleanup: %v", removeErr)
 		}
-		return fmt.Errorf("failed to write file: %w", err)
+		return fmt.Errorf("write file: %w", err)
 	}
 
 	// Sync to ensure data is flushed to disk
@@ -91,14 +91,14 @@ func SaveFile(ctx context.Context, fh *multipart.FileHeader, targetDir, baseDir 
 		if removeErr := os.Remove(destPath); removeErr != nil {
 			log.Printf("WARN: failed to remove file during cleanup: %v", removeErr)
 		}
-		return fmt.Errorf("failed to sync file: %w", err)
+		return fmt.Errorf("sync file: %w", err)
 	}
 
 	if err := dst.Close(); err != nil {
 		if removeErr := os.Remove(destPath); removeErr != nil {
 			log.Printf("WARN: failed to remove file during cleanup: %v", removeErr)
 		}
-		return fmt.Errorf("failed to close file: %w", err)
+		return fmt.Errorf("close file: %w", err)
 	}
 
 	return nil
@@ -135,7 +135,7 @@ func Delete(ctx context.Context, targetPath string) error {
 		// For directories, verify empty before deletion
 		entries, err := os.ReadDir(targetPath)
 		if err != nil {
-			return fmt.Errorf("failed to read directory: %w", err)
+			return fmt.Errorf("read directory: %w", err)
 		}
 		if len(entries) > 0 {
 			return &pathutil.PathError{
@@ -195,7 +195,7 @@ func Mkdir(ctx context.Context, targetPath string) error {
 	}
 
 	if !os.IsNotExist(err) {
-		return fmt.Errorf("failed to check target path: %w", err)
+		return fmt.Errorf("check target path: %w", err)
 	}
 
 	// Create directory with safe permissions (0755 = rwxr-xr-x)
@@ -213,7 +213,7 @@ func Mkdir(ctx context.Context, targetPath string) error {
 				Message:    "permission denied",
 			}
 		}
-		return fmt.Errorf("failed to create directory: %w", err)
+		return fmt.Errorf("create directory: %w", err)
 	}
 
 	return nil
@@ -249,7 +249,7 @@ func SharePublic(ctx context.Context, sourceAbsPath, publicBaseDir, relPath stri
 				Message:    "permission denied creating public directory",
 			}
 		}
-		return fmt.Errorf("failed to create public directory structure: %w", err)
+		return fmt.Errorf("create public directory structure: %w", err)
 	}
 
 	// Check if link already exists
@@ -277,7 +277,7 @@ func SharePublic(ctx context.Context, sourceAbsPath, publicBaseDir, relPath stri
 	}
 
 	if !os.IsNotExist(err) {
-		return fmt.Errorf("failed to check link path: %w", err)
+		return fmt.Errorf("check link path: %w", err)
 	}
 
 	// Create symlink pointing to the absolute source path
@@ -295,7 +295,7 @@ func SharePublic(ctx context.Context, sourceAbsPath, publicBaseDir, relPath stri
 				Message:    "permission denied creating symlink",
 			}
 		}
-		return fmt.Errorf("failed to create symlink: %w", err)
+		return fmt.Errorf("create symlink: %w", err)
 	}
 
 	return nil

@@ -1,8 +1,6 @@
 package files
 
 import (
-	"errors"
-	"log"
 	"net/http"
 
 	"files-browser-backend/internal/config"
@@ -25,38 +23,22 @@ func NewDeleteHandler(cfg config.Config) *DeleteHandler {
 // Security: Uses Lstat to avoid following symlinks, validates path is strictly
 // within base directory, and refuses to delete the base directory itself.
 func (h *DeleteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Extract target path from query parameter
-	targetPath := r.URL.Query().Get("path")
-	if targetPath == "" {
+	path := r.URL.Query().Get("path")
+	if path == "" {
 		httputil.ErrorResponse(w, http.StatusBadRequest, "path query parameter is required")
 		return
 	}
 
-	// Resolve and validate target path for deletion
-	resolvedPath, err := pathutil.ResolveDeletePath(h.Config.BaseDir, targetPath)
+	resolvedPath, err := pathutil.ResolveDeletePath(h.Config.BaseDir, path)
 	if err != nil {
-		var pathErr *pathutil.PathError
-		if errors.As(err, &pathErr) {
-			httputil.ErrorResponse(w, pathErr.StatusCode, pathErr.Message)
-			return
-		}
-		log.Printf("ERROR: delete path resolution failed: %v", err)
-		httputil.ErrorResponse(w, http.StatusInternalServerError, "internal server error")
+		httputil.HandlePathError(w, err, "delete path resolution")
 		return
 	}
 
-	// Perform deletion
 	if err := service.Delete(r.Context(), resolvedPath); err != nil {
-		var pathErr *pathutil.PathError
-		if errors.As(err, &pathErr) {
-			httputil.ErrorResponse(w, pathErr.StatusCode, pathErr.Message)
-			return
-		}
-		log.Printf("ERROR: deletion failed for %s: %v", resolvedPath, err)
-		httputil.ErrorResponse(w, http.StatusInternalServerError, "internal server error")
+		httputil.HandlePathError(w, err, "delete")
 		return
 	}
 
-	log.Printf("OK: deleted %s", resolvedPath)
 	w.WriteHeader(http.StatusNoContent)
 }

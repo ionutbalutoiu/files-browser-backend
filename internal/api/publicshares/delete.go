@@ -1,7 +1,6 @@
 package publicshares
 
 import (
-	"errors"
 	"log"
 	"net/http"
 
@@ -50,13 +49,7 @@ func (h *DeleteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Delete the public share
 	if err := service.DeletePublicShare(r.Context(), h.Config.PublicBaseDir, path); err != nil {
-		var pathErr *pathutil.PathError
-		if errors.As(err, &pathErr) {
-			httputil.ErrorResponse(w, pathErr.StatusCode, pathErr.Message)
-			return
-		}
-		log.Printf("ERROR: public-share delete failed for %s: %v", path, err)
-		httputil.ErrorResponse(w, http.StatusInternalServerError, "internal server error")
+		httputil.HandlePathError(w, err, "public-share delete")
 		return
 	}
 

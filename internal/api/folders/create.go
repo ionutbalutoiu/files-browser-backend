@@ -1,8 +1,7 @@
+// Package folders provides HTTP handlers for directory operations.
 package folders
 
 import (
-	"encoding/json"
-	"errors"
 	"log"
 	"net/http"
 
@@ -36,49 +35,60 @@ func NewCreateHandler(cfg config.Config) *CreateHandler {
 // The path is specified in the JSON body: {"path": "dir1/newdir"}
 //
 // SECURITY CRITICAL:
-// - Uses Lstat to avoid following symlinks
-// - Validates path is strictly within base directory
-// - Rejects path traversal, absolute paths, and symlink escapes
-// - Rejects directory names with path separators or null bytes
+// - Uses Lstat to avoid following symlinks.
+// - Validates path is strictly within base directory.
+// - Rejects path traversal, absolute paths, and symlink escapes.
+// - Rejects directory names with path separators or null bytes.
 func (h *CreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Parse JSON body
-	var req CreateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httputil.ErrorResponse(w, http.StatusBadRequest, "invalid JSON body")
+	req, ok := h.parseRequest(w, r)
+	if !ok {
 		return
 	}
 
-	// Validate path is provided
-	if req.Path == "" {
-		httputil.ErrorResponse(w, http.StatusBadRequest, "path is required")
+	resolvedPath, virtualPath, ok := h.resolvePath(w, req.Path)
+	if !ok {
 		return
 	}
 
-	// Resolve and validate target path for directory creation
-	resolvedPath, virtualPath, err := pathutil.ResolveMkdirPath(h.Config.BaseDir, req.Path)
-	if err != nil {
-		var pathErr *pathutil.PathError
-		if errors.As(err, &pathErr) {
-			httputil.ErrorResponse(w, pathErr.StatusCode, pathErr.Message)
-			return
-		}
-		log.Printf("ERROR: mkdir path resolution failed: %v", err)
-		httputil.ErrorResponse(w, http.StatusInternalServerError, "internal server error")
-		return
-	}
-
-	// Create the directory
-	if err := service.Mkdir(r.Context(), resolvedPath); err != nil {
-		var pathErr *pathutil.PathError
-		if errors.As(err, &pathErr) {
-			httputil.ErrorResponse(w, pathErr.StatusCode, pathErr.Message)
-			return
-		}
-		log.Printf("ERROR: mkdir failed for %s: %v", resolvedPath, err)
-		httputil.ErrorResponse(w, http.StatusInternalServerError, "internal server error")
+	if !h.createDirectory(w, r, resolvedPath) {
 		return
 	}
 
 	log.Printf("OK: created directory %s", resolvedPath)
 	httputil.JSONResponse(w, http.StatusCreated, CreateResponse{Created: virtualPath + "/"})
+}
+
+// parseRequest decodes and validates the JSON request body.
+func (h *CreateHandler) parseRequest(w http.ResponseWriter, r *http.Request) (CreateRequest, bool) {
+	req, err := httputil.DecodeJSON[CreateRequest](r)
+	if err != nil {
+		httputil.ErrorResponse(w, http.StatusBadRequest, "invalid JSON body")
+		return CreateRequest{}, false
+	}
+
+	if req.Path == "" {
+		httputil.ErrorResponse(w, http.StatusBadRequest, "path is required")
+		return CreateRequest{}, false
+	}
+
+	return req, true
+}
+
+// resolvePath validates and resolves the target path for directory creation.
+func (h *CreateHandler) resolvePath(w http.ResponseWriter, path string) (resolved, virtual string, ok bool) {
+	resolved, virtual, err := pathutil.ResolveMkdirPath(h.Config.BaseDir, path)
+	if err != nil {
+		httputil.HandlePathError(w, err, "mkdir path resolution")
+		return "", "", false
+	}
+	return resolved, virtual, true
+}
+
+// createDirectory creates the directory at the resolved path.
+func (h *CreateHandler) createDirectory(w http.ResponseWriter, r *http.Request, path string) bool {
+	if err := service.Mkdir(r.Context(), path); err != nil {
+		httputil.HandlePathError(w, err, "mkdir")
+		return false
+	}
+	return true
 }
