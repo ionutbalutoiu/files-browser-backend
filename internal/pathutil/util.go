@@ -18,6 +18,115 @@ func (e *PathError) Error() string {
 	return e.Message
 }
 
+// Common error constructors for consistent error messages.
+func errBadRequest(msg string) *PathError {
+	return &PathError{StatusCode: 400, Message: msg}
+}
+
+func errNotFound(msg string) *PathError {
+	return &PathError{StatusCode: 404, Message: msg}
+}
+
+func errForbidden(msg string) *PathError {
+	return &PathError{StatusCode: 403, Message: msg}
+}
+
+func errConflict(msg string) *PathError {
+	return &PathError{StatusCode: 409, Message: msg}
+}
+
+func errInternal(msg string) *PathError {
+	return &PathError{StatusCode: 500, Message: msg}
+}
+
+// cleanPath normalizes and validates a path for traversal attempts.
+// Returns the cleaned path or an error if validation fails.
+func cleanPath(path string) (string, error) {
+	cleaned := filepath.Clean(path)
+	if strings.Contains(cleaned, "..") {
+		return "", errBadRequest("invalid path: contains parent directory reference")
+	}
+	if filepath.IsAbs(cleaned) {
+		return "", errBadRequest("invalid path: absolute paths not allowed")
+	}
+	return cleaned, nil
+}
+
+// validateNotEmpty checks that a path is not empty or just ".".
+func validateNotEmpty(path, errMsg string) error {
+	if path == "" || path == "." {
+		return errBadRequest(errMsg)
+	}
+	return nil
+}
+
+// validateNoNullBytes checks for null bytes in a string.
+func validateNoNullBytes(s, context string) error {
+	if strings.ContainsRune(s, '\x00') {
+		return errBadRequest(fmt.Sprintf("invalid %s: contains null byte", context))
+	}
+	return nil
+}
+
+// validateName validates a simple filename or directory name.
+// It rejects empty, special names (., ..), path separators, and null bytes.
+func validateName(name, context string) error {
+	cleaned := filepath.Clean(name)
+	if strings.ContainsAny(cleaned, "/\\") || strings.Contains(cleaned, "..") {
+		return errBadRequest(fmt.Sprintf("invalid %s: must be a simple name without path separators", context))
+	}
+	if cleaned == "" || cleaned == "." || cleaned == ".." {
+		return errBadRequest(fmt.Sprintf("invalid %s", context))
+	}
+	return validateNoNullBytes(cleaned, context)
+}
+
+// isWithinBase checks if targetPath is within baseDir using relative path calculation.
+// Returns the relative path if valid, or an error if the path escapes the base.
+// If allowBase is true, "." (the base directory itself) is allowed.
+func isWithinBase(baseDir, targetPath string, allowBase bool) (string, error) {
+	relPath, err := filepath.Rel(baseDir, targetPath)
+	if err != nil || strings.HasPrefix(relPath, "..") {
+		return "", errBadRequest("invalid path: escapes base directory")
+	}
+	if relPath == "." && !allowBase {
+		return "", errBadRequest("invalid path: escapes base directory")
+	}
+	return relPath, nil
+}
+
+// lstatPath performs Lstat on a path and returns file info with proper error mapping.
+func lstatPath(path string) (os.FileInfo, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, errNotFound("path does not exist")
+		}
+		return nil, errInternal("failed to stat path")
+	}
+	return info, nil
+}
+
+// rejectSymlink returns an error if the file info indicates a symlink.
+func rejectSymlink(info os.FileInfo, action string) error {
+	if info.Mode()&os.ModeSymlink != 0 {
+		return errBadRequest(fmt.Sprintf("cannot %s symlinks", action))
+	}
+	return nil
+}
+
+// ensureNotExists returns an error if a path already exists.
+func ensureNotExists(path string) error {
+	_, err := os.Lstat(path)
+	if err == nil {
+		return errConflict("destination already exists")
+	}
+	if !os.IsNotExist(err) {
+		return errInternal("failed to check destination")
+	}
+	return nil
+}
+
 // ValidateRelativePath validates that a path is safe (no traversal, not absolute).
 func ValidateRelativePath(path string) error {
 	if path == "" {
@@ -35,134 +144,58 @@ func ValidateRelativePath(path string) error {
 // ResolveTargetDir validates and resolves a target directory path for uploads.
 // It ensures the path is safe and within the base directory.
 func ResolveTargetDir(baseDir, urlPath string) (string, error) {
-	// Resolve symlinks in baseDir first (handles macOS /var -> /private/var)
 	realBaseDir, err := filepath.EvalSymlinks(baseDir)
 	if err != nil {
-		return "", &PathError{
-			StatusCode: 500,
-			Message:    "base directory resolution failed",
-		}
+		return "", errInternal("base directory resolution failed")
 	}
 
-	// Clean the path to remove any . or .. components
-	cleanPath := filepath.Clean(urlPath)
-
-	// Reject paths that try to escape using ..
-	if strings.Contains(cleanPath, "..") {
-		return "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid path: contains parent directory reference",
-		}
+	cleanedPath, err := cleanPath(urlPath)
+	if err != nil {
+		return "", err
 	}
 
-	// Reject absolute paths
-	if filepath.IsAbs(cleanPath) {
-		return "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid path: absolute paths not allowed",
-		}
-	}
-
-	// Construct full target path
-	targetDir := filepath.Join(realBaseDir, cleanPath)
-
-	// Resolve any symlinks to get the real path
+	targetDir := filepath.Join(realBaseDir, cleanedPath)
 	realTarget, err := filepath.EvalSymlinks(targetDir)
 	if err != nil {
-		// If path doesn't exist, check parent directory
 		if os.IsNotExist(err) {
-			// Verify the path would still be under base if created
-			relPath, relErr := filepath.Rel(realBaseDir, targetDir)
-			if relErr != nil || strings.HasPrefix(relPath, "..") {
-				return "", &PathError{
-					StatusCode: 400,
-					Message:    "invalid path: escapes base directory",
-				}
+			// Path doesn't exist yet; verify it would be within base if created.
+			if _, err := isWithinBase(realBaseDir, targetDir, true); err != nil {
+				return "", err
 			}
 			return targetDir, nil
 		}
-		return "", &PathError{
-			StatusCode: 404,
-			Message:    "invalid target path",
-		}
+		return "", errNotFound("invalid target path")
 	}
 
-	// Verify resolved path is within base directory
-	relPath, err := filepath.Rel(realBaseDir, realTarget)
-	if err != nil || strings.HasPrefix(relPath, "..") {
-		return "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid path: escapes base directory",
-		}
+	if _, err := isWithinBase(realBaseDir, realTarget, true); err != nil {
+		return "", err
 	}
-
 	return realTarget, nil
 }
 
 // ResolveDeletePath validates and resolves a path for deletion.
-// SECURITY CRITICAL: This function prevents path traversal and symlink escape.
-// It uses Lstat (not Stat) to avoid following symlinks.
+// SECURITY CRITICAL: Prevents path traversal and symlink escape using Lstat.
 func ResolveDeletePath(baseDir, urlPath string) (string, error) {
-	// Reject empty path (would delete base directory)
-	if urlPath == "" || urlPath == "." {
-		return "", &PathError{
-			StatusCode: 403,
-			Message:    "cannot delete base directory",
-		}
+	if err := validateNotEmpty(urlPath, "cannot delete base directory"); err != nil {
+		return "", errForbidden("cannot delete base directory")
 	}
 
-	// Clean the path to normalize . and .. components
-	cleanPath := filepath.Clean(urlPath)
-
-	// Reject paths containing .. after cleaning
-	if strings.Contains(cleanPath, "..") {
-		return "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid path: contains parent directory reference",
-		}
-	}
-
-	// Reject absolute paths
-	if filepath.IsAbs(cleanPath) {
-		return "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid path: absolute paths not allowed",
-		}
-	}
-
-	// Construct full target path
-	targetPath := filepath.Join(baseDir, cleanPath)
-
-	// CRITICAL: Verify the target is strictly within base directory
-	relPath, err := filepath.Rel(baseDir, targetPath)
-	if err != nil || strings.HasPrefix(relPath, "..") || relPath == "." {
-		return "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid path: escapes base directory",
-		}
-	}
-
-	// Use Lstat to check if path exists WITHOUT following symlinks
-	info, err := os.Lstat(targetPath)
+	cleanedPath, err := cleanPath(urlPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", &PathError{
-				StatusCode: 404,
-				Message:    "path does not exist",
-			}
-		}
-		return "", &PathError{
-			StatusCode: 500,
-			Message:    "failed to stat path",
-		}
+		return "", err
 	}
 
-	// SECURITY: Reject symlinks entirely to prevent escape attacks
-	if info.Mode()&os.ModeSymlink != 0 {
-		return "", &PathError{
-			StatusCode: 400,
-			Message:    "cannot delete symlinks",
-		}
+	targetPath := filepath.Join(baseDir, cleanedPath)
+	if _, err := isWithinBase(baseDir, targetPath, false); err != nil {
+		return "", err
+	}
+
+	info, err := lstatPath(targetPath)
+	if err != nil {
+		return "", err
+	}
+	if err := rejectSymlink(info, "delete"); err != nil {
+		return "", err
 	}
 
 	return targetPath, nil
@@ -170,456 +203,224 @@ func ResolveDeletePath(baseDir, urlPath string) (string, error) {
 
 // ResolveMkdirPath validates and resolves a path for directory creation.
 // Returns the resolved filesystem path and the virtual path (for response).
-// SECURITY CRITICAL: This function prevents path traversal and symlink escape.
+// SECURITY CRITICAL: Prevents path traversal and symlink escape.
 func ResolveMkdirPath(baseDir, urlPath string) (resolvedPath, virtualPath string, err error) {
-	// Reject empty path (would create base directory itself)
-	if urlPath == "" || urlPath == "." {
-		return "", "", &PathError{
-			StatusCode: 403,
-			Message:    "cannot create base directory",
-		}
+	if err := validateNotEmpty(urlPath, "cannot create base directory"); err != nil {
+		return "", "", errForbidden("cannot create base directory")
 	}
 
-	// Clean the path to normalize . and .. components
-	cleanPath := filepath.Clean(urlPath)
-
-	// Reject paths containing .. after cleaning
-	if strings.Contains(cleanPath, "..") {
-		return "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid path: contains parent directory reference",
-		}
+	cleanedPath, err := cleanPath(urlPath)
+	if err != nil {
+		return "", "", err
 	}
 
-	// Reject absolute paths
-	if filepath.IsAbs(cleanPath) {
-		return "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid path: absolute paths not allowed",
-		}
+	dirName := filepath.Base(cleanedPath)
+	if err := validateName(dirName, "directory name"); err != nil {
+		return "", "", err
 	}
 
-	// Split into parent directory and new directory name
-	parentPath := filepath.Dir(cleanPath)
-	dirName := filepath.Base(cleanPath)
-
-	// SECURITY: Validate directory name independently
-	if strings.ContainsAny(dirName, "/\\") {
-		return "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid directory name: contains path separator",
-		}
+	targetPath := filepath.Join(baseDir, cleanedPath)
+	if _, err := isWithinBase(baseDir, targetPath, false); err != nil {
+		return "", "", errForbidden("invalid path: escapes base directory")
 	}
 
-	// Reject names containing null bytes
-	if strings.ContainsRune(dirName, '\x00') {
-		return "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid directory name: contains null byte",
-		}
-	}
-
-	// Reject empty or special names
-	if dirName == "" || dirName == "." || dirName == ".." {
-		return "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid directory name",
-		}
-	}
-
-	// Construct full target path
-	targetPath := filepath.Join(baseDir, cleanPath)
-
-	// CRITICAL: Verify the target is strictly within base directory
-	relPath, err := filepath.Rel(baseDir, targetPath)
-	if err != nil || strings.HasPrefix(relPath, "..") || relPath == "." {
-		return "", "", &PathError{
-			StatusCode: 403,
-			Message:    "invalid path: escapes base directory",
-		}
-	}
-
-	// Construct parent path in filesystem
+	parentPath := filepath.Dir(cleanedPath)
 	parentFullPath := filepath.Join(baseDir, parentPath)
+	if err := validateParentDir(baseDir, parentFullPath); err != nil {
+		return "", "", err
+	}
 
-	// Verify parent directory exists and is a directory (not a symlink)
+	realParent, err := filepath.EvalSymlinks(parentFullPath)
+	if err != nil {
+		return "", "", errNotFound("parent directory not accessible")
+	}
+
+	resolvedTarget := filepath.Join(realParent, dirName)
+	return resolvedTarget, cleanedPath, nil
+}
+
+// validateParentDir checks that a parent directory exists, is a directory, not a symlink,
+// and is within the base directory.
+func validateParentDir(baseDir, parentFullPath string) error {
 	parentInfo, err := os.Lstat(parentFullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", "", &PathError{
-				StatusCode: 404,
-				Message:    "parent directory does not exist",
-			}
+			return errNotFound("parent directory does not exist")
 		}
-		return "", "", &PathError{
-			StatusCode: 500,
-			Message:    "failed to stat parent",
-		}
+		return errInternal("failed to stat parent")
 	}
-
-	// SECURITY: Reject if parent is a symlink
 	if parentInfo.Mode()&os.ModeSymlink != 0 {
-		return "", "", &PathError{
-			StatusCode: 403,
-			Message:    "cannot create directory under symlink",
-		}
+		return errForbidden("cannot create directory under symlink")
 	}
-
 	if !parentInfo.IsDir() {
-		return "", "", &PathError{
-			StatusCode: 400,
-			Message:    "parent path is not a directory",
-		}
+		return errBadRequest("parent path is not a directory")
 	}
 
-	// CRITICAL: Verify parent resolved path is still within base directory
 	realParent, err := filepath.EvalSymlinks(parentFullPath)
 	if err != nil {
-		return "", "", &PathError{
-			StatusCode: 404,
-			Message:    "parent directory not accessible",
-		}
+		return errNotFound("parent directory not accessible")
 	}
-
-	// Also resolve base directory for comparison
 	realBase, err := filepath.EvalSymlinks(baseDir)
 	if err != nil {
-		return "", "", &PathError{
-			StatusCode: 500,
-			Message:    "failed to resolve base directory",
-		}
+		return errInternal("failed to resolve base directory")
 	}
 
 	relParent, err := filepath.Rel(realBase, realParent)
 	if err != nil || strings.HasPrefix(relParent, "..") {
-		return "", "", &PathError{
-			StatusCode: 403,
-			Message:    "parent directory escapes base directory",
-		}
+		return errForbidden("parent directory escapes base directory")
 	}
-
-	// Return the resolved path (using the real parent path)
-	resolvedTarget := filepath.Join(realParent, dirName)
-
-	return resolvedTarget, cleanPath, nil
+	return nil
 }
 
 // ResolveRenamePaths validates and resolves paths for rename operation.
 // Returns resolved filesystem paths and virtual paths (for response).
 // SECURITY CRITICAL: Prevents path traversal, symlink escape, and overwriting.
 func ResolveRenamePaths(baseDir, oldPath, newName string) (resolvedOld, resolvedNew, virtualOld, virtualNew string, err error) {
-	// Reject empty old path
-	if oldPath == "" || oldPath == "." {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "source path is required",
-		}
+	if err := validateNotEmpty(oldPath, "source path is required"); err != nil {
+		return "", "", "", "", err
 	}
-
-	// Reject empty new name
 	if newName == "" {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "new name is required",
-		}
+		return "", "", "", "", errBadRequest("new name is required")
 	}
 
-	// Clean the old path
-	cleanOldPath := filepath.Clean(oldPath)
-
-	// Reject paths containing .. after cleaning
-	if strings.Contains(cleanOldPath, "..") {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid path: contains parent directory reference",
-		}
-	}
-
-	// Reject absolute paths
-	if filepath.IsAbs(cleanOldPath) {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid path: absolute paths not allowed",
-		}
-	}
-
-	// Validate new name - must be a simple name, not a path
-	cleanNewName := filepath.Clean(newName)
-	if strings.ContainsAny(cleanNewName, "/\\") || strings.Contains(cleanNewName, "..") {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid new name: must be a simple name without path separators",
-		}
-	}
-
-	// Reject special names
-	if cleanNewName == "" || cleanNewName == "." || cleanNewName == ".." {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid new name",
-		}
-	}
-
-	// Reject names containing null bytes
-	if strings.ContainsRune(cleanNewName, '\x00') {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid new name: contains null byte",
-		}
-	}
-
-	// Construct full old path
-	oldFullPath := filepath.Join(baseDir, cleanOldPath)
-
-	// CRITICAL: Verify the old path is strictly within base directory
-	relOldPath, err := filepath.Rel(baseDir, oldFullPath)
-	if err != nil || strings.HasPrefix(relOldPath, "..") || relOldPath == "." {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid path: escapes base directory",
-		}
-	}
-
-	// Use Lstat to check if old path exists WITHOUT following symlinks
-	oldInfo, err := os.Lstat(oldFullPath)
+	cleanOldPath, err := cleanPath(oldPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", "", "", "", &PathError{
-				StatusCode: 404,
-				Message:    "source path does not exist",
-			}
-		}
-		return "", "", "", "", &PathError{
-			StatusCode: 500,
-			Message:    "failed to stat source path",
-		}
+		return "", "", "", "", err
+	}
+	if err := validateName(newName, "new name"); err != nil {
+		return "", "", "", "", err
+	}
+	cleanNewName := filepath.Clean(newName)
+
+	oldFullPath := filepath.Join(baseDir, cleanOldPath)
+	if _, err := isWithinBase(baseDir, oldFullPath, false); err != nil {
+		return "", "", "", "", err
 	}
 
-	// SECURITY: Reject symlinks
-	if oldInfo.Mode()&os.ModeSymlink != 0 {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "cannot rename symlinks",
+	oldInfo, err := lstatPath(oldFullPath)
+	if err != nil {
+		if pathErr, ok := err.(*PathError); ok && pathErr.StatusCode == 404 {
+			return "", "", "", "", errNotFound("source path does not exist")
 		}
+		return "", "", "", "", errInternal("failed to stat source path")
+	}
+	if err := rejectSymlink(oldInfo, "rename"); err != nil {
+		return "", "", "", "", err
 	}
 
-	// Construct new path (same parent directory, new name)
 	parentDir := filepath.Dir(oldFullPath)
 	newFullPath := filepath.Join(parentDir, cleanNewName)
-
-	// CRITICAL: Verify new path is also within base directory
-	relNewPath, err := filepath.Rel(baseDir, newFullPath)
-	if err != nil || strings.HasPrefix(relNewPath, "..") {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid new name: would escape base directory",
-		}
+	relNewPath, err := isWithinBase(baseDir, newFullPath, false)
+	if err != nil {
+		return "", "", "", "", errBadRequest("invalid new name: would escape base directory")
 	}
 
-	// Check if new path already exists
-	if _, err := os.Lstat(newFullPath); err == nil {
-		return "", "", "", "", &PathError{
-			StatusCode: 409,
-			Message:    "destination already exists",
-		}
-	} else if !os.IsNotExist(err) {
-		return "", "", "", "", &PathError{
-			StatusCode: 500,
-			Message:    "failed to check destination",
-		}
+	if err := ensureNotExists(newFullPath); err != nil {
+		return "", "", "", "", err
 	}
 
-	// Virtual paths for response (relative to base)
-	virtualOld = cleanOldPath
-	virtualNew = relNewPath
-
-	return oldFullPath, newFullPath, virtualOld, virtualNew, nil
+	return oldFullPath, newFullPath, cleanOldPath, relNewPath, nil
 }
 
 // ResolveMovePaths validates and resolves paths for move operation.
 // Returns resolved filesystem paths and virtual paths (for response).
 // SECURITY CRITICAL: Prevents path traversal, symlink escape, and overwriting.
 func ResolveMovePaths(baseDir, sourcePath, destPath string) (resolvedSource, resolvedDest, virtualSource, virtualDest string, err error) {
-	// Reject empty source path
-	if sourcePath == "" || sourcePath == "." {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "source path is required",
-		}
+	if err := validateNotEmpty(sourcePath, "source path is required"); err != nil {
+		return "", "", "", "", err
+	}
+	if err := validateNotEmpty(destPath, "destination path is required"); err != nil {
+		return "", "", "", "", err
 	}
 
-	// Reject empty destination path
-	if destPath == "" || destPath == "." {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "destination path is required",
-		}
+	cleanSourcePath, err := cleanAndValidateMovePath(sourcePath, "source")
+	if err != nil {
+		return "", "", "", "", err
+	}
+	cleanDestPath, err := cleanAndValidateMovePath(destPath, "destination")
+	if err != nil {
+		return "", "", "", "", err
 	}
 
-	// Clean both paths
-	cleanSourcePath := filepath.Clean(sourcePath)
-	cleanDestPath := filepath.Clean(destPath)
-
-	// Reject paths containing .. after cleaning
-	if strings.Contains(cleanSourcePath, "..") {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid source path: contains parent directory reference",
-		}
-	}
-	if strings.Contains(cleanDestPath, "..") {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid destination path: contains parent directory reference",
-		}
-	}
-
-	// Reject absolute paths
-	if filepath.IsAbs(cleanSourcePath) {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid source path: absolute paths not allowed",
-		}
-	}
-	if filepath.IsAbs(cleanDestPath) {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid destination path: absolute paths not allowed",
-		}
-	}
-
-	// Reject null bytes in paths
-	if strings.ContainsRune(cleanSourcePath, '\x00') {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid source path: contains null byte",
-		}
-	}
-	if strings.ContainsRune(cleanDestPath, '\x00') {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid destination path: contains null byte",
-		}
-	}
-
-	// Construct full paths
 	sourceFullPath := filepath.Join(baseDir, cleanSourcePath)
 	destFullPath := filepath.Join(baseDir, cleanDestPath)
 
-	// CRITICAL: Verify the source path is strictly within base directory
-	relSourcePath, err := filepath.Rel(baseDir, sourceFullPath)
-	if err != nil || strings.HasPrefix(relSourcePath, "..") || relSourcePath == "." {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid source path: escapes base directory",
-		}
+	if _, err := isWithinBase(baseDir, sourceFullPath, false); err != nil {
+		return "", "", "", "", errBadRequest("invalid source path: escapes base directory")
+	}
+	if _, err := isWithinBase(baseDir, destFullPath, false); err != nil {
+		return "", "", "", "", errBadRequest("invalid destination path: escapes base directory")
 	}
 
-	// CRITICAL: Verify the destination path is strictly within base directory
-	relDestPath, err := filepath.Rel(baseDir, destFullPath)
-	if err != nil || strings.HasPrefix(relDestPath, "..") || relDestPath == "." {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid destination path: escapes base directory",
-		}
-	}
-
-	// Use Lstat to check if source path exists WITHOUT following symlinks
-	sourceInfo, err := os.Lstat(sourceFullPath)
+	sourceInfo, err := lstatPath(sourceFullPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", "", "", "", &PathError{
-				StatusCode: 404,
-				Message:    "source path does not exist",
-			}
+		if pathErr, ok := err.(*PathError); ok && pathErr.StatusCode == 404 {
+			return "", "", "", "", errNotFound("source path does not exist")
 		}
-		return "", "", "", "", &PathError{
-			StatusCode: 500,
-			Message:    "failed to stat source path",
-		}
+		return "", "", "", "", errInternal("failed to stat source path")
+	}
+	if err := rejectSymlink(sourceInfo, "move"); err != nil {
+		return "", "", "", "", err
 	}
 
-	// SECURITY: Reject symlinks as source
-	if sourceInfo.Mode()&os.ModeSymlink != 0 {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "cannot move symlinks",
-		}
+	if err := validateDestParent(destFullPath); err != nil {
+		return "", "", "", "", err
+	}
+	if err := ensureNotExists(destFullPath); err != nil {
+		return "", "", "", "", err
 	}
 
-	// Verify destination parent directory exists
+	return sourceFullPath, destFullPath, cleanSourcePath, cleanDestPath, nil
+}
+
+// cleanAndValidateMovePath cleans and validates a path for move operations.
+func cleanAndValidateMovePath(path, context string) (string, error) {
+	cleanedPath, err := cleanPath(path)
+	if err != nil {
+		// Adjust error message for context.
+		if strings.Contains(err.Error(), "parent directory reference") {
+			return "", errBadRequest(fmt.Sprintf("invalid %s path: contains parent directory reference", context))
+		}
+		if strings.Contains(err.Error(), "absolute paths") {
+			return "", errBadRequest(fmt.Sprintf("invalid %s path: absolute paths not allowed", context))
+		}
+		return "", err
+	}
+	if err := validateNoNullBytes(cleanedPath, context+" path"); err != nil {
+		return "", err
+	}
+	return cleanedPath, nil
+}
+
+// validateDestParent checks that the destination parent directory exists and is valid.
+func validateDestParent(destFullPath string) error {
 	destParentDir := filepath.Dir(destFullPath)
 	destParentInfo, err := os.Lstat(destParentDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", "", "", "", &PathError{
-				StatusCode: 404,
-				Message:    "destination parent directory does not exist",
-			}
+			return errNotFound("destination parent directory does not exist")
 		}
-		return "", "", "", "", &PathError{
-			StatusCode: 500,
-			Message:    "failed to stat destination parent",
-		}
+		return errInternal("failed to stat destination parent")
 	}
-
-	// SECURITY: Reject if destination parent is a symlink
 	if destParentInfo.Mode()&os.ModeSymlink != 0 {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "cannot move to directory under symlink",
-		}
+		return errBadRequest("cannot move to directory under symlink")
 	}
-
 	if !destParentInfo.IsDir() {
-		return "", "", "", "", &PathError{
-			StatusCode: 400,
-			Message:    "destination parent is not a directory",
-		}
+		return errBadRequest("destination parent is not a directory")
 	}
-
-	// Check if destination already exists
-	if _, err := os.Lstat(destFullPath); err == nil {
-		return "", "", "", "", &PathError{
-			StatusCode: 409,
-			Message:    "destination already exists",
-		}
-	} else if !os.IsNotExist(err) {
-		return "", "", "", "", &PathError{
-			StatusCode: 500,
-			Message:    "failed to check destination",
-		}
-	}
-
-	// Virtual paths for response (relative to base)
-	virtualSource = cleanSourcePath
-	virtualDest = cleanDestPath
-
-	return sourceFullPath, destFullPath, virtualSource, virtualDest, nil
+	return nil
 }
 
 // ValidateFilename validates an uploaded filename.
 // Returns the sanitized filename (base name only) or an error.
 func ValidateFilename(filename string) (string, error) {
-	// Get base name only
 	baseName := filepath.Base(filename)
-
-	// Reject empty filenames
 	if baseName == "" || baseName == "." || baseName == ".." {
-		return "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid filename",
-		}
+		return "", errBadRequest("invalid filename")
 	}
-
-	// Reject hidden files (starting with .)
 	if strings.HasPrefix(baseName, ".") {
-		return "", &PathError{
-			StatusCode: 400,
-			Message:    "hidden files not allowed",
-		}
+		return "", errBadRequest("hidden files not allowed")
 	}
-
 	return baseName, nil
 }
 
@@ -632,88 +433,39 @@ func ValidateDestination(baseDir, destPath string) error {
 
 	relPath, err := filepath.Rel(realBase, destPath)
 	if err != nil || strings.HasPrefix(relPath, "..") {
-		return &PathError{
-			StatusCode: 400,
-			Message:    "invalid destination path",
-		}
+		return errBadRequest("invalid destination path")
 	}
-
 	return nil
 }
 
 // ResolveSharePublicPath validates and resolves a path for public sharing.
-// It validates the source file path and returns the resolved filesystem path.
+// Returns the resolved filesystem path and virtual path.
 // SECURITY CRITICAL: Prevents path traversal, symlink escape, and ensures only regular files.
 func ResolveSharePublicPath(baseDir, urlPath string) (resolvedPath, virtualPath string, err error) {
-	// Reject empty path
-	if urlPath == "" || urlPath == "." {
-		return "", "", &PathError{
-			StatusCode: 400,
-			Message:    "file path is required",
-		}
+	if err := validateNotEmpty(urlPath, "file path is required"); err != nil {
+		return "", "", err
 	}
 
-	// Clean the path to normalize . and .. components
-	cleanPath := filepath.Clean(urlPath)
-
-	// Reject paths containing .. after cleaning
-	if strings.Contains(cleanPath, "..") {
-		return "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid path: contains parent directory reference",
-		}
-	}
-
-	// Reject absolute paths
-	if filepath.IsAbs(cleanPath) {
-		return "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid path: absolute paths not allowed",
-		}
-	}
-
-	// Construct full target path
-	targetPath := filepath.Join(baseDir, cleanPath)
-
-	// CRITICAL: Verify the target is strictly within base directory
-	relPath, err := filepath.Rel(baseDir, targetPath)
-	if err != nil || strings.HasPrefix(relPath, "..") || relPath == "." {
-		return "", "", &PathError{
-			StatusCode: 400,
-			Message:    "invalid path: escapes base directory",
-		}
-	}
-
-	// Use Lstat to check if path exists WITHOUT following symlinks
-	info, err := os.Lstat(targetPath)
+	cleanedPath, err := cleanPath(urlPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return "", "", &PathError{
-				StatusCode: 404,
-				Message:    "path does not exist",
-			}
-		}
-		return "", "", &PathError{
-			StatusCode: 500,
-			Message:    "failed to stat path",
-		}
+		return "", "", err
 	}
 
-	// SECURITY: Reject symlinks
-	if info.Mode()&os.ModeSymlink != 0 {
-		return "", "", &PathError{
-			StatusCode: 400,
-			Message:    "cannot share symlinks",
-		}
+	targetPath := filepath.Join(baseDir, cleanedPath)
+	if _, err := isWithinBase(baseDir, targetPath, false); err != nil {
+		return "", "", err
 	}
 
-	// Only allow regular files
+	info, err := lstatPath(targetPath)
+	if err != nil {
+		return "", "", err
+	}
+	if err := rejectSymlink(info, "share"); err != nil {
+		return "", "", err
+	}
 	if !info.Mode().IsRegular() {
-		return "", "", &PathError{
-			StatusCode: 400,
-			Message:    "only regular files can be shared publicly",
-		}
+		return "", "", errBadRequest("only regular files can be shared publicly")
 	}
 
-	return targetPath, cleanPath, nil
+	return targetPath, cleanedPath, nil
 }

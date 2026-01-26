@@ -8,6 +8,22 @@ import (
 	"strconv"
 )
 
+// Environment variable names.
+const (
+	envListenAddr    = "FILES_SVC_LISTEN_ADDR"
+	envBaseDir       = "FILES_SVC_BASE_DIR"
+	envPublicBaseDir = "FILES_SVC_PUBLIC_BASE_DIR"
+	envMaxUploadSize = "FILES_SVC_MAX_UPLOAD_SIZE"
+)
+
+// Default configuration values.
+const (
+	defaultListenAddr    = ":8080"
+	defaultBaseDir       = "/srv/files"
+	defaultPublicBaseDir = "/srv/files-public"
+	defaultMaxUploadSize = 2 * 1024 * 1024 * 1024 // 2GB
+)
+
 // Config holds the service configuration.
 type Config struct {
 	ListenAddr    string
@@ -17,77 +33,95 @@ type Config struct {
 }
 
 // DefaultConfig returns a Config with default values.
+// ListenAddr is read from FILES_SVC_LISTEN_ADDR environment variable,
+// falling back to :8080 if not set.
 // BaseDir is read from FILES_SVC_BASE_DIR environment variable,
 // falling back to /srv/files if not set.
-// PublicBaseDir is read from FILES_SVC_PUBLIC_BASE_DIR environment variable.
+// PublicBaseDir is read from FILES_SVC_PUBLIC_BASE_DIR environment variable,
+// falling back to /srv/files-public if not set.
 // MaxUploadSize is read from FILES_SVC_MAX_UPLOAD_SIZE environment variable,
 // falling back to 2GB if not set.
 func DefaultConfig() Config {
-	baseDir := os.Getenv("FILES_SVC_BASE_DIR")
-	if baseDir == "" {
-		baseDir = "/srv/files"
-	}
-
-	publicBaseDir := os.Getenv("FILES_SVC_PUBLIC_BASE_DIR")
-
-	maxUploadSize := int64(2 * 1024 * 1024 * 1024) // 2GB default
-	if envSize := os.Getenv("FILES_SVC_MAX_UPLOAD_SIZE"); envSize != "" {
-		if parsed, err := strconv.ParseInt(envSize, 10, 64); err == nil {
-			maxUploadSize = parsed
-		}
-	}
-
 	return Config{
-		ListenAddr:    ":8080",
-		BaseDir:       baseDir,
-		PublicBaseDir: publicBaseDir,
-		MaxUploadSize: maxUploadSize,
+		ListenAddr:    envString(envListenAddr, defaultListenAddr),
+		BaseDir:       envString(envBaseDir, defaultBaseDir),
+		PublicBaseDir: envString(envPublicBaseDir, defaultPublicBaseDir),
+		MaxUploadSize: envInt64(envMaxUploadSize, defaultMaxUploadSize),
 	}
 }
 
 // Validate checks the configuration and resolves the base directory path.
 // It returns the validated config with an absolute BaseDir path.
 func (c Config) Validate() (Config, error) {
-	// Resolve and validate base directory
-	absBase, err := filepath.Abs(c.BaseDir)
+	absBase, err := resolveDir(c.BaseDir)
 	if err != nil {
-		return c, fmt.Errorf("invalid base directory: %w", err)
+		return c, fmt.Errorf("base directory: %w", err)
 	}
-
-	// Ensure base directory exists
-	info, err := os.Stat(absBase)
-	if err != nil {
-		return c, fmt.Errorf("base directory error: %w", err)
-	}
-	if !info.IsDir() {
-		return c, fmt.Errorf("base path is not a directory: %s", absBase)
-	}
-
 	c.BaseDir = absBase
 
-	// Validate and resolve public base directory if set
 	if c.PublicBaseDir != "" {
-		absPublic, err := filepath.Abs(c.PublicBaseDir)
+		absPublic, err := ensureDir(c.PublicBaseDir)
 		if err != nil {
-			return c, fmt.Errorf("invalid public base directory: %w", err)
+			return c, fmt.Errorf("public base directory: %w", err)
 		}
-
-		// Create public base directory if it doesn't exist
-		if err := os.MkdirAll(absPublic, 0755); err != nil {
-			return c, fmt.Errorf("create public base directory: %w", err)
-		}
-
-		// Verify it's a directory
-		info, err := os.Stat(absPublic)
-		if err != nil {
-			return c, fmt.Errorf("public base directory error: %w", err)
-		}
-		if !info.IsDir() {
-			return c, fmt.Errorf("public base path is not a directory: %s", absPublic)
-		}
-
 		c.PublicBaseDir = absPublic
 	}
 
 	return c, nil
+}
+
+// envString returns the value of the environment variable or the fallback if not set.
+func envString(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// envInt64 returns the value of the environment variable parsed as int64, or the fallback if not set or invalid.
+func envInt64(key string, fallback int64) int64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+// resolveDir resolves path to absolute and validates it exists as a directory.
+func resolveDir(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve path: %w", err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("not a directory: %s", abs)
+	}
+	return abs, nil
+}
+
+// ensureDir resolves path to absolute, creates it if needed, and validates it's a directory.
+func ensureDir(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve path: %w", err)
+	}
+	if err := os.MkdirAll(abs, 0755); err != nil {
+		return "", fmt.Errorf("create directory: %w", err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("not a directory: %s", abs)
+	}
+	return abs, nil
 }

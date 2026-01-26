@@ -11,22 +11,23 @@ import (
 	"files-browser-backend/internal/pathutil"
 )
 
-// ErrorResponse sends a JSON error response with the given status code and message.
-func ErrorResponse(w http.ResponseWriter, status int, message string) {
+// writeJSON encodes data as JSON and writes it to the response.
+func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(map[string]string{"error": message}); err != nil {
-		log.Printf("WARN: failed to encode error response: %v", err)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("WARN: encode json response: %v", err)
 	}
+}
+
+// ErrorResponse sends a JSON error response with the given status code and message.
+func ErrorResponse(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]string{"error": message})
 }
 
 // JSONResponse sends a JSON response with the given status code and data.
 func JSONResponse(w http.ResponseWriter, status int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		log.Printf("WARN: failed to encode JSON response: %v", err)
-	}
+	writeJSON(w, status, data)
 }
 
 // HandlePathError writes an appropriate HTTP error response for path-related errors.
