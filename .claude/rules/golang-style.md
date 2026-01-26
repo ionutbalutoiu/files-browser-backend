@@ -3,6 +3,7 @@
 ## Core Principles
 
 Priorities for readable code (in order):
+
 1. **Clarity**: Purpose and rationale are obvious to the reader
 2. **Simplicity**: Code is straightforward
 3. **Concision**: Minimal without sacrificing clarity
