@@ -8,6 +8,7 @@ import (
 	"files-browser-backend/internal/config"
 	"files-browser-backend/internal/httputil"
 	"files-browser-backend/internal/pathutil"
+	"files-browser-backend/internal/service"
 )
 
 // MoveRequest is the JSON request body for moving files or directories.
@@ -74,6 +75,12 @@ func (h *MoveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		httputil.HandlePathError(w, err, "move path resolution")
+		return
+	}
+
+	// Deny move if source contains any public shares.
+	if service.ContainsPublicShare(h.Config.BaseDir, h.Config.PublicBaseDir, resolvedSource) {
+		httputil.ErrorResponse(w, http.StatusForbidden, "cannot move path containing public shares")
 		return
 	}
 

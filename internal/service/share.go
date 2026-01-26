@@ -360,6 +360,106 @@ func removeSymlink(linkAbs string) error {
 	return nil
 }
 
+// HasPublicShare checks if a file has a public share symlink.
+// relPath is the relative path used to compute the public share location.
+// Returns true if a public share symlink exists for this file, false otherwise.
+func HasPublicShare(publicBaseDir, relPath string) bool {
+	if publicBaseDir == "" {
+		return false
+	}
+
+	linkPath := filepath.Join(publicBaseDir, relPath)
+	linkPath = filepath.Clean(linkPath)
+
+	info, err := os.Lstat(linkPath)
+	if err != nil {
+		return false
+	}
+
+	return info.Mode()&os.ModeSymlink != 0
+}
+
+// ContainsPublicShare checks if a path (file or directory) has any public shares.
+// For files, it checks if the file itself is a public share.
+// For directories, it recursively checks if any file within has a public share.
+// baseDir is the base directory for computing relative paths.
+// absPath is the absolute path to check.
+// Returns true if any public share exists, false otherwise.
+func ContainsPublicShare(baseDir, publicBaseDir, absPath string) bool {
+	if publicBaseDir == "" {
+		return false
+	}
+
+	info, err := os.Lstat(absPath)
+	if err != nil {
+		return false
+	}
+
+	// For files, check directly.
+	if !info.IsDir() {
+		relPath, err := filepath.Rel(baseDir, absPath)
+		if err != nil {
+			return false
+		}
+		return HasPublicShare(publicBaseDir, relPath)
+	}
+
+	// For directories, walk and check each file.
+	found := false
+	_ = filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // Skip entries we can't access.
+		}
+		if d.IsDir() {
+			return nil // Continue walking into directories.
+		}
+
+		// Compute relative path from baseDir.
+		relPath, err := filepath.Rel(baseDir, path)
+		if err != nil {
+			return nil
+		}
+
+		if HasPublicShare(publicBaseDir, relPath) {
+			found = true
+			return filepath.SkipAll // Stop walking, we found one.
+		}
+		return nil
+	})
+
+	return found
+}
+
+// DeletePublicShareIfExists deletes a public share symlink if it exists.
+// This is a best-effort operation that ignores errors.
+// Used when deleting the source file to clean up the associated public share.
+func DeletePublicShareIfExists(ctx context.Context, publicBaseDir, relPath string) {
+	if publicBaseDir == "" || relPath == "" {
+		return
+	}
+
+	linkPath := filepath.Join(publicBaseDir, relPath)
+	linkPath = filepath.Clean(linkPath)
+
+	// Verify it's a symlink before attempting to delete.
+	info, err := os.Lstat(linkPath)
+	if err != nil {
+		return
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return
+	}
+
+	// Remove the symlink.
+	cleanPublicBaseDir := filepath.Clean(publicBaseDir)
+	if err := os.Remove(linkPath); err != nil {
+		return
+	}
+
+	// Clean up empty parent directories (best-effort).
+	cleanupEmptyParents(linkPath, cleanPublicBaseDir)
+}
+
 // cleanupEmptyParents removes empty parent directories starting from the parent of
 // deletedPath up to (but NOT including) stopAt.
 // This is best-effort: errors are ignored since the main operation (symlink deletion)

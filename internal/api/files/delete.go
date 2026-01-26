@@ -2,6 +2,7 @@ package files
 
 import (
 	"net/http"
+	"path/filepath"
 
 	"files-browser-backend/internal/config"
 	"files-browser-backend/internal/httputil"
@@ -39,6 +40,10 @@ func (h *DeleteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		httputil.HandlePathError(w, err, "delete")
 		return
 	}
+
+	// Clean up associated public share symlink if it exists (best-effort).
+	relPath := filepath.Clean(path)
+	service.DeletePublicShareIfExists(r.Context(), h.Config.PublicBaseDir, relPath)
 
 	w.WriteHeader(http.StatusNoContent)
 }

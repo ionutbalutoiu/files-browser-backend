@@ -9,6 +9,7 @@ import (
 	"files-browser-backend/internal/config"
 	"files-browser-backend/internal/httputil"
 	"files-browser-backend/internal/pathutil"
+	"files-browser-backend/internal/service"
 )
 
 // RenameRequest is the JSON request body for renaming files or directories.
@@ -79,6 +80,12 @@ func (h *RenameHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	)
 	if err != nil {
 		httputil.HandlePathError(w, err, "rename path resolution")
+		return
+	}
+
+	// Deny rename if source contains any public shares.
+	if service.ContainsPublicShare(h.Config.BaseDir, h.Config.PublicBaseDir, resolvedSource) {
+		httputil.ErrorResponse(w, http.StatusForbidden, "cannot rename path containing public shares")
 		return
 	}
 
