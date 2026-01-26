@@ -49,7 +49,7 @@ func (h *DeleteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Delete the public share
-	if err := service.DeletePublicShare(h.Config.PublicBaseDir, path); err != nil {
+	if err := service.DeletePublicShare(r.Context(), h.Config.PublicBaseDir, path); err != nil {
 		var pathErr *pathutil.PathError
 		if errors.As(err, &pathErr) {
 			httputil.ErrorResponse(w, pathErr.StatusCode, pathErr.Message)

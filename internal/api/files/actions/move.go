@@ -12,17 +12,22 @@ import (
 	"files-browser-backend/internal/pathutil"
 )
 
-// MoveRequest is the JSON request for move operations.
+// MoveRequest is the JSON request body for moving files or directories.
 type MoveRequest struct {
+	// From is the source path relative to base directory (e.g., "docs/old.txt").
 	From string `json:"from"`
-	To   string `json:"to"`
+	// To is the destination path relative to base directory (e.g., "archive/new.txt").
+	To string `json:"to"`
 }
 
 // MoveResponse is the JSON response for move operations.
 type MoveResponse struct {
-	From    string `json:"from"`
-	To      string `json:"to"`
-	Success bool   `json:"success"`
+	// From is the original path that was moved.
+	From string `json:"from"`
+	// To is the new path after the move.
+	To string `json:"to"`
+	// Success indicates whether the move operation completed successfully.
+	Success bool `json:"success"`
 }
 
 // MoveHandler handles POST /api/files/move requests.

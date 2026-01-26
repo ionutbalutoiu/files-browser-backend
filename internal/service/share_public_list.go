@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -12,7 +14,11 @@ import (
 // under publicBaseDir. It includes symlinks pointing to regular files and
 // regular files directly present. Directories and broken/invalid symlinks
 // are skipped.
-func ListSharePublicFiles(publicBaseDir string) ([]string, error) {
+// The context can be used for cancellation.
+func ListSharePublicFiles(ctx context.Context, publicBaseDir string) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("operation cancelled: %w", err)
+	}
 	var files []string
 
 	err := filepath.WalkDir(publicBaseDir, func(path string, d fs.DirEntry, err error) error {

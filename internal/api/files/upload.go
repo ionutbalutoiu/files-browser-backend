@@ -1,6 +1,7 @@
 package files
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -16,9 +17,12 @@ import (
 
 // Response is the JSON response for file upload requests.
 type Response struct {
+	// Uploaded contains filenames that were successfully uploaded.
 	Uploaded []string `json:"uploaded"`
-	Skipped  []string `json:"skipped"`
-	Errors   []string `json:"errors,omitempty"`
+	// Skipped contains filenames that were skipped (e.g., file already exists, no overwrite).
+	Skipped []string `json:"skipped"`
+	// Errors contains validation or processing error messages, omitted if empty.
+	Errors []string `json:"errors,omitempty"`
 }
 
 // UploadHandler handles file upload requests.
@@ -76,7 +80,7 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	// Process uploaded files
-	response := h.processUploads(r.MultipartForm, targetDir)
+	response := h.processUploads(r.Context(), r.MultipartForm, targetDir)
 
 	// Determine response status
 	status := http.StatusCreated
@@ -92,7 +96,7 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // processUploads handles all files in the multipart form.
-func (h *UploadHandler) processUploads(form *multipart.Form, targetDir string) Response {
+func (h *UploadHandler) processUploads(ctx context.Context, form *multipart.Form, targetDir string) Response {
 	response := Response{
 		Uploaded: []string{},
 		Skipped:  []string{},
@@ -100,7 +104,7 @@ func (h *UploadHandler) processUploads(form *multipart.Form, targetDir string) R
 	}
 
 	// Ensure target directory exists
-	if err := service.EnsureDir(targetDir); err != nil {
+	if err := service.EnsureDir(ctx, targetDir); err != nil {
 		log.Printf("ERROR: failed to create target directory %s: %v", targetDir, err)
 		response.Errors = append(response.Errors, "failed to create target directory")
 		return response
@@ -109,7 +113,7 @@ func (h *UploadHandler) processUploads(form *multipart.Form, targetDir string) R
 	// Process all file fields
 	for fieldName, files := range form.File {
 		for _, fileHeader := range files {
-			err := service.SaveFile(fileHeader, targetDir, h.Config.BaseDir)
+			err := service.SaveFile(ctx, fileHeader, targetDir, h.Config.BaseDir)
 			if err != nil {
 				var fileErr *service.FileError
 				if errors.As(err, &fileErr) {

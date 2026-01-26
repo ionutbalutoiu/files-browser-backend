@@ -29,7 +29,7 @@ func (h *ListHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// List all publicly shared files
-	files, err := service.ListSharePublicFiles(h.Config.PublicBaseDir)
+	files, err := service.ListSharePublicFiles(r.Context(), h.Config.PublicBaseDir)
 	if err != nil {
 		log.Printf("ERROR: failed to list public shared files: %v", err)
 		httputil.ErrorResponse(w, http.StatusInternalServerError, "failed to list public shared files")

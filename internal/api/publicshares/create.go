@@ -18,15 +18,18 @@ func encodeShareID(path string) string {
 	return base64.URLEncoding.EncodeToString([]byte(path))
 }
 
-// CreateRequest is the JSON request for creating a public share.
+// CreateRequest is the JSON request body for creating a public share.
 type CreateRequest struct {
+	// Path is the file path relative to base directory to share publicly (e.g., "docs/file.txt").
 	Path string `json:"path"`
 }
 
-// CreateResponse is the JSON response for a public share.
+// CreateResponse is the JSON response for a successfully created public share.
 type CreateResponse struct {
+	// ShareID is the URL-safe base64-encoded identifier for the public share.
 	ShareID string `json:"shareId"`
-	Path    string `json:"path"`
+	// Path is the relative path of the shared file within the public directory.
+	Path string `json:"path"`
 }
 
 // CreateHandler handles POST /api/public-shares requests.
@@ -83,7 +86,7 @@ func (h *CreateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create the public share symlink
-	if err := service.SharePublic(resolvedPath, h.Config.PublicBaseDir, virtualPath); err != nil {
+	if err := service.SharePublic(r.Context(), resolvedPath, h.Config.PublicBaseDir, virtualPath); err != nil {
 		var pathErr *pathutil.PathError
 		if errors.As(err, &pathErr) {
 			httputil.ErrorResponse(w, pathErr.StatusCode, pathErr.Message)

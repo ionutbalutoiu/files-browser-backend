@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -17,7 +19,12 @@ import (
 // - Verifies the resolved path stays within publicBaseDir
 // - Only deletes symlinks (not regular files or directories)
 // - Never removes publicBaseDir itself during cleanup
-func DeletePublicShare(publicBaseDir, relPath string) error {
+//
+// The context can be used for cancellation.
+func DeletePublicShare(ctx context.Context, publicBaseDir, relPath string) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("operation cancelled: %w", err)
+	}
 	// Validate publicBaseDir is set
 	if publicBaseDir == "" {
 		return &pathutil.PathError{

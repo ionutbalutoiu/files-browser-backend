@@ -46,7 +46,7 @@ func (h *DeleteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Perform deletion
-	if err := service.Delete(resolvedPath); err != nil {
+	if err := service.Delete(r.Context(), resolvedPath); err != nil {
 		var pathErr *pathutil.PathError
 		if errors.As(err, &pathErr) {
 			httputil.ErrorResponse(w, pathErr.StatusCode, pathErr.Message)

@@ -2,6 +2,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -25,7 +26,12 @@ func (e *FileError) Error() string {
 
 // SaveFile saves a single uploaded file to the target directory.
 // It validates the filename, prevents overwrites, and ensures atomic writes.
-func SaveFile(fh *multipart.FileHeader, targetDir, baseDir string) error {
+// The context can be used for cancellation of long-running uploads.
+func SaveFile(ctx context.Context, fh *multipart.FileHeader, targetDir, baseDir string) error {
+	// Check for context cancellation before starting
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("operation cancelled: %w", err)
+	}
 	// Validate filename
 	filename, err := pathutil.ValidateFilename(fh.Filename)
 	if err != nil {
@@ -99,13 +105,21 @@ func SaveFile(fh *multipart.FileHeader, targetDir, baseDir string) error {
 }
 
 // EnsureDir creates a directory if it doesn't exist.
-func EnsureDir(path string) error {
+// The context can be used for cancellation.
+func EnsureDir(ctx context.Context, path string) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("operation cancelled: %w", err)
+	}
 	return os.MkdirAll(path, 0755)
 }
 
 // Delete removes a file or empty directory.
 // For directories, it verifies they are empty before deletion.
-func Delete(targetPath string) error {
+// The context can be used for cancellation.
+func Delete(ctx context.Context, targetPath string) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("operation cancelled: %w", err)
+	}
 	info, err := os.Lstat(targetPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -153,7 +167,11 @@ func Delete(targetPath string) error {
 
 // Mkdir creates a new directory with safe permissions.
 // SECURITY: Never follows symlinks, verifies target doesn't already exist.
-func Mkdir(targetPath string) error {
+// The context can be used for cancellation.
+func Mkdir(ctx context.Context, targetPath string) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("operation cancelled: %w", err)
+	}
 	// Check if target already exists using Lstat (don't follow symlinks)
 	info, err := os.Lstat(targetPath)
 	if err == nil {
@@ -204,7 +222,11 @@ func Mkdir(targetPath string) error {
 // SharePublic creates a symlink in publicBaseDir pointing to the source file.
 // The symlink mirrors the same relative directory structure.
 // Returns nil on success, or an error with appropriate status code.
-func SharePublic(sourceAbsPath, publicBaseDir, relPath string) error {
+// The context can be used for cancellation.
+func SharePublic(ctx context.Context, sourceAbsPath, publicBaseDir, relPath string) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("operation cancelled: %w", err)
+	}
 	// Compute link path in public directory
 	linkPath := filepath.Join(publicBaseDir, relPath)
 	linkPath = filepath.Clean(linkPath)

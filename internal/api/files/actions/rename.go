@@ -13,17 +13,22 @@ import (
 	"files-browser-backend/internal/pathutil"
 )
 
-// RenameRequest is the JSON request for rename operations.
+// RenameRequest is the JSON request body for renaming files or directories.
 type RenameRequest struct {
+	// Path is the current path relative to base directory (e.g., "docs/oldname.txt").
 	Path string `json:"path"`
+	// Name is the new name for the file or directory (no path separators allowed).
 	Name string `json:"name"`
 }
 
 // RenameResponse is the JSON response for rename operations.
 type RenameResponse struct {
-	From    string `json:"from"`
-	To      string `json:"to"`
-	Success bool   `json:"success"`
+	// From is the original path before renaming.
+	From string `json:"from"`
+	// To is the new path after renaming.
+	To string `json:"to"`
+	// Success indicates whether the rename operation completed successfully.
+	Success bool `json:"success"`
 }
 
 // RenameHandler handles POST /api/files/rename requests.

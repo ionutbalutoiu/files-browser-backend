@@ -1,6 +1,7 @@
 package service_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -42,7 +43,7 @@ func TestDeletePublicShare_SuccessWithNestedCleanup(t *testing.T) {
 	}
 
 	// Delete the public share
-	err = service.DeletePublicShare(publicDir, "dir1/dir2/dir3/my-file.txt")
+	err = service.DeletePublicShare(context.Background(), publicDir, "dir1/dir2/dir3/my-file.txt")
 	if err != nil {
 		t.Fatalf("DeletePublicShare failed: %v", err)
 	}
@@ -95,7 +96,7 @@ func TestDeletePublicShare_CleanupStopsAtNonEmptyDir(t *testing.T) {
 	_ = os.WriteFile(otherFile, []byte("other"), 0644)
 
 	// Delete the public share
-	err := service.DeletePublicShare(publicDir, "dir1/dir2/my-file.txt")
+	err := service.DeletePublicShare(context.Background(), publicDir, "dir1/dir2/my-file.txt")
 	if err != nil {
 		t.Fatalf("DeletePublicShare failed: %v", err)
 	}
@@ -129,7 +130,7 @@ func TestDeletePublicShare_NotASymlink(t *testing.T) {
 	_ = os.WriteFile(regularFile, []byte("content"), 0644)
 
 	// Try to delete - should fail
-	err := service.DeletePublicShare(publicDir, "regular.txt")
+	err := service.DeletePublicShare(context.Background(), publicDir, "regular.txt")
 	if err == nil {
 		t.Fatal("expected error when deleting regular file")
 	}
@@ -161,7 +162,7 @@ func TestDeletePublicShare_DirectoryNotSymlink(t *testing.T) {
 	_ = os.Mkdir(dir, 0755)
 
 	// Try to delete - should fail
-	err := service.DeletePublicShare(publicDir, "somedir")
+	err := service.DeletePublicShare(context.Background(), publicDir, "somedir")
 	if err == nil {
 		t.Fatal("expected error when deleting directory")
 	}
@@ -188,7 +189,7 @@ func TestDeletePublicShare_DirectoryNotSymlink(t *testing.T) {
 func TestDeletePublicShare_NotFound(t *testing.T) {
 	publicDir := t.TempDir()
 
-	err := service.DeletePublicShare(publicDir, "nonexistent.txt")
+	err := service.DeletePublicShare(context.Background(), publicDir, "nonexistent.txt")
 	if err == nil {
 		t.Fatal("expected error for non-existent path")
 	}
@@ -217,7 +218,7 @@ func TestDeletePublicShare_PathTraversal(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := service.DeletePublicShare(publicDir, tc.path)
+			err := service.DeletePublicShare(context.Background(), publicDir, tc.path)
 			if err == nil {
 				t.Fatal("expected error for path traversal")
 			}
@@ -237,7 +238,7 @@ func TestDeletePublicShare_PathTraversal(t *testing.T) {
 func TestDeletePublicShare_EmptyPath(t *testing.T) {
 	publicDir := t.TempDir()
 
-	err := service.DeletePublicShare(publicDir, "")
+	err := service.DeletePublicShare(context.Background(), publicDir, "")
 	if err == nil {
 		t.Fatal("expected error for empty path")
 	}
@@ -253,7 +254,7 @@ func TestDeletePublicShare_EmptyPath(t *testing.T) {
 }
 
 func TestDeletePublicShare_EmptyPublicBaseDir(t *testing.T) {
-	err := service.DeletePublicShare("", "some/path.txt")
+	err := service.DeletePublicShare(context.Background(), "", "some/path.txt")
 	if err == nil {
 		t.Fatal("expected error for empty public base dir")
 	}
@@ -276,7 +277,7 @@ func TestDeletePublicShare_DotPath(t *testing.T) {
 	publicDir := t.TempDir()
 
 	// Try to delete with "." path (would delete base directory)
-	err := service.DeletePublicShare(publicDir, ".")
+	err := service.DeletePublicShare(context.Background(), publicDir, ".")
 	if err == nil {
 		t.Fatal("expected error for '.' path")
 	}
@@ -307,7 +308,7 @@ func TestDeletePublicShare_DeepNestedCleanup(t *testing.T) {
 	_ = os.Symlink(targetFile, linkPath)
 
 	// Delete
-	err := service.DeletePublicShare(publicDir, "a/b/c/d/e/f/file.txt")
+	err := service.DeletePublicShare(context.Background(), publicDir, "a/b/c/d/e/f/file.txt")
 	if err != nil {
 		t.Fatalf("DeletePublicShare failed: %v", err)
 	}
@@ -338,7 +339,7 @@ func TestDeletePublicShare_RootLevelSymlink(t *testing.T) {
 	_ = os.Symlink(targetFile, linkPath)
 
 	// Delete
-	err := service.DeletePublicShare(publicDir, "my-file.txt")
+	err := service.DeletePublicShare(context.Background(), publicDir, "my-file.txt")
 	if err != nil {
 		t.Fatalf("DeletePublicShare failed: %v", err)
 	}
