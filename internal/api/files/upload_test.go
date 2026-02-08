@@ -236,6 +236,9 @@ func TestRejectOverwrite(t *testing.T) {
 	if len(resp.Skipped) != 1 {
 		t.Errorf("expected 1 skipped file, got %d", len(resp.Skipped))
 	}
+	if len(resp.Errors) != 0 {
+		t.Errorf("expected no errors for existing file conflict, got %v", resp.Errors)
+	}
 
 	// Verify original file unchanged
 	content, _ := os.ReadFile(filepath.Join(tmpDir, "existing", "file.txt"))
@@ -333,7 +336,7 @@ func TestPartialSuccess(t *testing.T) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	// New file - should succeed
+	// New file - should succeed.
 	part1, _ := writer.CreateFormFile("file", "new.txt")
 	_, _ = part1.Write([]byte("new content"))
 
@@ -349,7 +352,7 @@ func TestPartialSuccess(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
-	// Should return 201 because at least one file was uploaded
+	// Should return 201 because at least one file was uploaded.
 	if rr.Code != http.StatusCreated {
 		t.Errorf("expected 201, got %d: %s", rr.Code, rr.Body.String())
 	}
@@ -362,6 +365,13 @@ func TestPartialSuccess(t *testing.T) {
 	}
 	if len(resp.Skipped) != 1 || resp.Skipped[0] != "existing.txt" {
 		t.Errorf("unexpected skipped: %v", resp.Skipped)
+	}
+	if len(resp.Errors) != 0 {
+		t.Errorf("expected no errors for existing file conflict, got %v", resp.Errors)
+	}
+
+	if _, err := os.Stat(filepath.Join(tmpDir, "partial", "new.txt")); err != nil {
+		t.Errorf("new file should be uploaded when other files conflict: %v", err)
 	}
 }
 

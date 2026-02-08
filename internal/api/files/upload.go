@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"files-browser-backend/internal/config"
@@ -101,11 +103,44 @@ func (h *UploadHandler) processUploads(ctx context.Context, form *multipart.Form
 
 	for _, files := range form.File {
 		for _, fileHeader := range files {
+			exists, normalizedName, err := h.fileExists(fileHeader, targetDir)
+			if err != nil {
+				response.Errors = append(response.Errors, "failed to validate existing files")
+				continue
+			}
+			if exists {
+				response.Skipped = append(response.Skipped, normalizedName)
+				continue
+			}
 			h.processFile(ctx, fileHeader, targetDir, &response)
 		}
 	}
 
 	return response
+}
+
+// fileExists checks whether the destination already exists for a valid upload filename.
+// Invalid filenames/destinations are not treated as existence conflicts here and are
+// left to SaveFile so existing validation messages stay consistent.
+func (h *UploadHandler) fileExists(fh *multipart.FileHeader, targetDir string) (bool, string, error) {
+	filename, err := pathutil.ValidateFilename(fh.Filename)
+	if err != nil {
+		return false, "", nil
+	}
+
+	destPath := filepath.Join(targetDir, filename)
+	if err := pathutil.ValidateDestination(h.Config.BaseDir, destPath); err != nil {
+		return false, "", nil
+	}
+
+	_, err = os.Stat(destPath)
+	if err == nil {
+		return true, filename, nil
+	}
+	if os.IsNotExist(err) {
+		return false, filename, nil
+	}
+	return false, "", fmt.Errorf("stat destination %q: %w", filename, err)
 }
 
 // processFile handles a single file upload and updates the response accordingly.
