@@ -27,29 +27,6 @@ func (e *FileError) Error() string {
 // It validates the filename, prevents overwrites, and ensures atomic writes.
 // The context can be used for cancellation of long-running uploads.
 func SaveFile(ctx context.Context, fh *multipart.FileHeader, targetDir, baseDir string) error {
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("operation cancelled: %w", err)
-	}
-
-	// Validate filename.
-	filename, err := pathutil.ValidateFilename(fh.Filename)
-	if err != nil {
-		return &FileError{Message: err.Error()}
-	}
-
-	// Construct destination path.
-	destPath := filepath.Join(targetDir, filename)
-
-	// Final safety check: ensure destination is within base directory.
-	if err := pathutil.ValidateDestination(baseDir, destPath); err != nil {
-		return &FileError{Message: "invalid destination path"}
-	}
-
-	// Check if file already exists (reject overwrites).
-	if _, err := os.Stat(destPath); err == nil {
-		return &FileError{Message: "file already exists", IsConflict: true}
-	}
-
 	// Open uploaded file for reading.
 	src, err := fh.Open()
 	if err != nil {
@@ -60,6 +37,35 @@ func SaveFile(ctx context.Context, fh *multipart.FileHeader, targetDir, baseDir 
 			log.Printf("WARN: failed to close source file: %v", err)
 		}
 	}()
+
+	return SaveStream(ctx, fh.Filename, src, targetDir, baseDir)
+}
+
+// SaveStream saves file content from src to target directory.
+// It validates filename and destination, rejects overwrites, and ensures atomic writes.
+func SaveStream(ctx context.Context, filename string, src io.Reader, targetDir, baseDir string) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("operation cancelled: %w", err)
+	}
+
+	// Validate filename.
+	validFilename, err := pathutil.ValidateFilename(filename)
+	if err != nil {
+		return &FileError{Message: err.Error()}
+	}
+
+	// Construct destination path.
+	destPath := filepath.Join(targetDir, validFilename)
+
+	// Final safety check: ensure destination is within base directory.
+	if err := pathutil.ValidateDestination(baseDir, destPath); err != nil {
+		return &FileError{Message: "invalid destination path"}
+	}
+
+	// Check if file already exists (reject overwrites).
+	if _, err := os.Stat(destPath); err == nil {
+		return &FileError{Message: "file already exists", IsConflict: true}
+	}
 
 	return writeAndSyncFile(src, destPath)
 }

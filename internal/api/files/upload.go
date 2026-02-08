@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -74,22 +75,26 @@ func (h *UploadHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, h.Config.MaxUploadSize)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		if strings.Contains(err.Error(), "request body too large") {
+	reader, err := r.MultipartReader()
+	if err != nil {
+		httputil.ErrorResponse(w, http.StatusBadRequest, "failed to parse multipart form")
+		return
+	}
+
+	response, err := h.processUploads(r.Context(), reader, targetDir)
+	if err != nil {
+		if isUploadSizeExceeded(err) {
 			httputil.ErrorResponse(w, http.StatusRequestEntityTooLarge, "upload size exceeds limit")
 			return
 		}
 		httputil.ErrorResponse(w, http.StatusBadRequest, "failed to parse multipart form")
 		return
 	}
-	defer func() { _ = r.MultipartForm.RemoveAll() }()
-
-	response := h.processUploads(r.Context(), r.MultipartForm, targetDir)
 	httputil.JSONResponse(w, determineResponseStatus(response), response)
 }
 
 // processUploads handles all files in the multipart form.
-func (h *UploadHandler) processUploads(ctx context.Context, form *multipart.Form, targetDir string) Response {
+func (h *UploadHandler) processUploads(ctx context.Context, reader *multipart.Reader, targetDir string) (Response, error) {
 	response := Response{
 		Uploaded: []string{},
 		Skipped:  []string{},
@@ -98,32 +103,53 @@ func (h *UploadHandler) processUploads(ctx context.Context, form *multipart.Form
 
 	if err := service.EnsureDir(ctx, targetDir); err != nil {
 		response.Errors = append(response.Errors, "failed to create target directory")
-		return response
+		return response, nil
 	}
 
-	for _, files := range form.File {
-		for _, fileHeader := range files {
-			exists, normalizedName, err := h.fileExists(fileHeader, targetDir)
-			if err != nil {
-				response.Errors = append(response.Errors, "failed to validate existing files")
-				continue
-			}
-			if exists {
-				response.Skipped = append(response.Skipped, normalizedName)
-				continue
-			}
-			h.processFile(ctx, fileHeader, targetDir, &response)
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return response, err
+		}
+
+		filename := part.FileName()
+		if filename == "" {
+			_ = part.Close()
+			continue
+		}
+
+		exists, normalizedName, err := h.fileExists(filename, targetDir)
+		if err != nil {
+			_ = part.Close()
+			response.Errors = append(response.Errors, "failed to validate existing files")
+			continue
+		}
+		if exists {
+			_ = part.Close()
+			response.Skipped = append(response.Skipped, normalizedName)
+			continue
+		}
+
+		if err := h.processPart(ctx, filename, part, targetDir, &response); err != nil {
+			_ = part.Close()
+			return response, err
+		}
+		if err := part.Close(); err != nil {
+			return response, err
 		}
 	}
 
-	return response
+	return response, nil
 }
 
 // fileExists checks whether the destination already exists for a valid upload filename.
 // Invalid filenames/destinations are not treated as existence conflicts here and are
-// left to SaveFile so existing validation messages stay consistent.
-func (h *UploadHandler) fileExists(fh *multipart.FileHeader, targetDir string) (bool, string, error) {
-	filename, err := pathutil.ValidateFilename(fh.Filename)
+// left to SaveStream so existing validation messages stay consistent.
+func (h *UploadHandler) fileExists(rawFilename, targetDir string) (bool, string, error) {
+	filename, err := pathutil.ValidateFilename(rawFilename)
 	if err != nil {
 		return false, "", nil
 	}
@@ -143,23 +169,28 @@ func (h *UploadHandler) fileExists(fh *multipart.FileHeader, targetDir string) (
 	return false, "", fmt.Errorf("stat destination %q: %w", filename, err)
 }
 
-// processFile handles a single file upload and updates the response accordingly.
-func (h *UploadHandler) processFile(ctx context.Context, fh *multipart.FileHeader, targetDir string, resp *Response) {
-	err := service.SaveFile(ctx, fh, targetDir, h.Config.BaseDir)
+func isUploadSizeExceeded(err error) bool {
+	var maxBytesErr *http.MaxBytesError
+	return errors.As(err, &maxBytesErr) || strings.Contains(err.Error(), "request body too large")
+}
+
+// processPart handles a single file part and updates the response accordingly.
+func (h *UploadHandler) processPart(ctx context.Context, filename string, part *multipart.Part, targetDir string, resp *Response) error {
+	err := service.SaveStream(ctx, filename, part, targetDir, h.Config.BaseDir)
 	if err == nil {
-		resp.Uploaded = append(resp.Uploaded, fh.Filename)
-		return
+		resp.Uploaded = append(resp.Uploaded, filename)
+		return nil
 	}
 
 	var fileErr *service.FileError
 	if errors.As(err, &fileErr) {
 		if fileErr.IsConflict {
-			resp.Skipped = append(resp.Skipped, fh.Filename)
+			resp.Skipped = append(resp.Skipped, filename)
 		} else {
-			resp.Errors = append(resp.Errors, fmt.Sprintf("%s: %s", fh.Filename, fileErr.Message))
+			resp.Errors = append(resp.Errors, fmt.Sprintf("%s: %s", filename, fileErr.Message))
 		}
-		return
+		return nil
 	}
 
-	resp.Errors = append(resp.Errors, fmt.Sprintf("%s: internal error", fh.Filename))
+	return err
 }

@@ -323,6 +323,30 @@ func TestInvalidContentType(t *testing.T) {
 	}
 }
 
+func TestUploadSizeExceeded(t *testing.T) {
+	cfg, tmpDir := setupTestHandler(t)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+	cfg.MaxUploadSize = 512
+
+	handler := files.NewUploadHandler(cfg)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "large.txt")
+	_, _ = part.Write(bytes.Repeat([]byte("x"), 4*1024))
+	_ = writer.Close()
+
+	req := httptest.NewRequest(http.MethodPut, "/api/files?path=test", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 413, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestPartialSuccess(t *testing.T) {
 	cfg, tmpDir := setupTestHandler(t)
 	defer func() { _ = os.RemoveAll(tmpDir) }()

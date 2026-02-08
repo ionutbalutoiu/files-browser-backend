@@ -53,6 +53,13 @@ func DefaultConfig() Config {
 // Validate checks the configuration and resolves the base directory path.
 // It returns the validated config with an absolute BaseDir path.
 func (c Config) Validate() (Config, error) {
+	if c.ListenAddr == "" {
+		return c, fmt.Errorf("listen address is required")
+	}
+	if c.MaxUploadSize <= 0 {
+		return c, fmt.Errorf("max upload size must be greater than zero")
+	}
+
 	absBase, err := resolveDir(c.BaseDir)
 	if err != nil {
 		return c, fmt.Errorf("base directory: %w", err)

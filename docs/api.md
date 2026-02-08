@@ -51,6 +51,7 @@ Upload files to a directory. Creates parent directories automatically.
 - Files starting with `.` are rejected
 - Existing files are never overwritten
 - Existing-file conflicts are reported via `skipped` (not `errors`)
+- Files are processed sequentially as a multipart stream
 
 ---
 
